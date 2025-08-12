@@ -13,6 +13,8 @@ export interface PolygonData {
 export interface EosConfig {
   apiKey: string;
   cropType: "wheat" | "wine" | "olive" | (string & {});
+  start_date?: string;
+  end_date?: string;
 }
 
 export interface VegetationPoint {
@@ -136,6 +138,8 @@ export async function getVegetationTimeSeries(
     body: {
       action: "vegetation",
       polygon: _polygon,
+      start_date: config.start_date,
+      end_date: config.end_date,
     },
   });
 
@@ -165,6 +169,8 @@ export async function getWeatherSummary(
     body: {
       action: "weather",
       polygon: _polygon,
+      start_date: config.start_date,
+      end_date: config.end_date,
     },
   });
 

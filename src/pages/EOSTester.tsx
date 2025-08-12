@@ -39,6 +39,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import { kml as kmlToGeoJSON } from "@tmcw/togeojson";
+import { Calendar } from "@/components/ui/calendar";
 
 const EOSTester: React.FC = () => {
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
@@ -50,9 +51,23 @@ const EOSTester: React.FC = () => {
     area_ha: 0,
   });
 
+  const [polygonOptions, setPolygonOptions] = useState<{ id: string; label: string; coordinates: [number, number][]; area_ha: number }[]>([]);
+
+  const formatDate = (d: Date) => d.toISOString().slice(0, 10);
+  const today = new Date();
+  const startDefault = new Date(today);
+  startDefault.setFullYear(today.getFullYear() - 1);
+
   const [eosConfig, setEosConfig] = useState<EosConfig>({
     apiKey: "",
     cropType: "wheat",
+    start_date: formatDate(startDefault),
+    end_date: formatDate(today),
+  });
+
+  const [dateRange, setDateRange] = useState<{ from?: Date; to?: Date }>({
+    from: startDefault,
+    to: today,
   });
 
   const [testResults, setTestResults] = useState<{
@@ -147,6 +162,7 @@ const EOSTester: React.FC = () => {
       area_ha: area,
     });
 
+    setPolygonOptions([]);
     setEosConfig((prev) => ({ ...prev, cropType: field.crop }));
     setErrors("");
   };
@@ -170,6 +186,7 @@ const EOSTester: React.FC = () => {
         source: "GeoJSON incollato",
         area_ha: area,
       });
+      setPolygonOptions([]);
       toast({ title: "GeoJSON caricato", description: "Poligono valido." });
       setErrors("");
     } catch (e: any) {
@@ -194,7 +211,7 @@ const EOSTester: React.FC = () => {
         const doc = new DOMParser().parseFromString(text, "text/xml");
         const gj: any = kmlToGeoJSON(doc);
 
-        const pickPolygon = (geojson: any): [number, number][] | null => {
+        const extractPolygons = (geojson: any): [number, number][][] => {
           const polygons: [number, number][][] = [];
 
           const pushFromGeom = (geom: any) => {
@@ -210,35 +227,35 @@ const EOSTester: React.FC = () => {
             }
           };
 
-          if (geojson.type === "FeatureCollection" && Array.isArray(geojson.features)) {
-            geojson.features.forEach((f: any) => pushFromGeom(f.geometry));
-          } else if (geojson.type === "Feature") {
-            pushFromGeom(geojson.geometry);
-          } else if (geojson.type === "Polygon" || geojson.type === "MultiPolygon") {
-            pushFromGeom(geojson);
+          if (gj.type === "FeatureCollection" && Array.isArray(gj.features)) {
+            gj.features.forEach((f: any) => pushFromGeom(f.geometry));
+          } else if (gj.type === "Feature") {
+            pushFromGeom(gj.geometry);
+          } else if (gj.type === "Polygon" || gj.type === "MultiPolygon") {
+            pushFromGeom(gj);
           }
 
-          if (!polygons.length) return null;
-          // Choose the polygon with the largest area
-          let best = polygons[0];
-          let bestArea = calculateAreaHa(best as any);
-          for (const p of polygons.slice(1)) {
-            const a = calculateAreaHa(p as any);
-            if (a > bestArea) {
-              best = p;
-              bestArea = a;
-            }
-          }
-          return best as any;
+          return polygons;
         };
 
-        coords = pickPolygon(gj);
-        if (!coords) throw new Error("Nessun Polygon valido trovato nel KML");
+        const polys = extractPolygons(gj);
+        if (!polys.length) throw new Error("Nessun Polygon valido trovato nel KML");
+
+        const opts = polys.map((p: any, i: number) => {
+          let ring = p as [number, number][];
+          if (ring.length && (ring[0][0] !== ring[ring.length - 1][0] || ring[0][1] !== ring[ring.length - 1][1])) {
+            ring = [...ring, ring[0]] as any;
+          }
+          const area = calculateAreaHa(ring as any);
+          return { id: `kml-${i}`, label: `Poligono ${i + 1}`, coordinates: ring as any, area_ha: area };
+        }).sort((a: any, b: any) => b.area_ha - a.area_ha);
+
+        setPolygonOptions(opts);
+        coords = opts[0].coordinates;
       } else if (lower.endsWith(".geojson") || lower.endsWith(".json") || file.type.includes("json")) {
         const text = await file.text();
         const parsed = JSON.parse(text);
-        // Reuse the same picker for GeoJSON
-        const pickFromGeoJSON = (geojson: any): [number, number][] | null => {
+        const extractPolygons = (geojson: any): [number, number][][] => {
           const polygons: [number, number][][] = [];
           const pushFromGeom = (geom: any) => {
             if (!geom) return;
@@ -259,20 +276,20 @@ const EOSTester: React.FC = () => {
           } else if (parsed.type === "Polygon" || parsed.type === "MultiPolygon") {
             pushFromGeom(parsed);
           }
-          if (!polygons.length) return null;
-          let best = polygons[0];
-          let bestArea = calculateAreaHa(best as any);
-          for (const p of polygons.slice(1)) {
-            const a = calculateAreaHa(p as any);
-            if (a > bestArea) {
-              best = p;
-              bestArea = a;
-            }
-          }
-          return best as any;
+          return polygons;
         };
-        coords = pickFromGeoJSON(parsed);
-        if (!coords) throw new Error("Il file non contiene un Polygon valido");
+        const polys = extractPolygons(parsed);
+        if (!polys.length) throw new Error("Il file non contiene un Polygon valido");
+        const opts = polys.map((p: any, i: number) => {
+          let ring = p as [number, number][];
+          if (ring.length && (ring[0][0] !== ring[ring.length - 1][0] || ring[0][1] !== ring[ring.length - 1][1])) {
+            ring = [...ring, ring[0]] as any;
+          }
+          const area = calculateAreaHa(ring as any);
+          return { id: `gj-${i}`, label: `Poligono ${i + 1}`, coordinates: ring as any, area_ha: area };
+        }).sort((a: any, b: any) => b.area_ha - a.area_ha);
+        setPolygonOptions(opts);
+        coords = opts[0].coordinates;
       } else {
         throw new Error("Formato file non supportato. Usa .kml, .geojson o .json");
       }
@@ -297,6 +314,16 @@ const EOSTester: React.FC = () => {
       setErrors(msg);
       toast({ title: "Errore file", description: msg, variant: "destructive" });
     }
+  };
+
+  const handleSelectPolygonOption = (opt: { id: string; label: string; coordinates: [number, number][]; area_ha: number }) => {
+    const geoJson = { type: "Polygon", coordinates: [opt.coordinates] } as any;
+    setPolygonData({
+      geojson: JSON.stringify(geoJson, null, 2),
+      coordinates: opt.coordinates as any,
+      source: polygonData.source || "File",
+      area_ha: opt.area_ha,
+    });
   };
 
   const callEOSAPI = async () => {
@@ -476,6 +503,28 @@ const EOSTester: React.FC = () => {
               <p className="text-xs text-muted-foreground">Seleziona un file .kml, .geojson o .json contenente un Polygon.</p>
             </div>
 
+            {polygonOptions.length > 1 && (
+              <div className="mt-6">
+                <h3 className="text-lg font-semibold text-foreground mb-3">Più poligoni rilevati</h3>
+                <div className="grid md:grid-cols-2 gap-3">
+                  {polygonOptions.map((opt, idx) => {
+                    const selected = JSON.stringify(opt.coordinates) === JSON.stringify(polygonData.coordinates);
+                    return (
+                      <button
+                        key={opt.id}
+                        onClick={() => handleSelectPolygonOption(opt)}
+                        className={`p-4 rounded-xl border-2 text-left transition-all ${selected ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}
+                      >
+                        <div className="font-medium text-foreground">{opt.label}</div>
+                        <div className="text-xs text-muted-foreground">{opt.area_ha} ha • {opt.coordinates.length - 1} punti</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+
             {/* GeoJSON manual paste */}
             <div className="space-y-2">
               <h3 className="text-lg font-semibold text-foreground">Oppure incolla GeoJSON (Polygon)</h3>
@@ -549,24 +598,28 @@ const EOSTester: React.FC = () => {
                 </div>
 
                 <div className="bg-muted rounded-xl p-6 border border-border">
-                  <h3 className="text-lg font-semibold mb-4 text-foreground">Coltura</h3>
-                  <select
-                    value={eosConfig.cropType}
-                    onChange={(e) => setEosConfig((prev) => ({ ...prev, cropType: e.target.value }))}
-                    className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground"
-                  >
-                    <option value="wheat">Frumento</option>
-                    <option value="wine">Vite</option>
-                    <option value="olive">Olivo</option>
-                  </select>
+                  <h3 className="text-lg font-semibold mb-4 text-foreground">Intervallo date</h3>
+                  <Calendar
+                    mode="range"
+                    selected={dateRange as any}
+                    onSelect={(range: any) => {
+                      setDateRange(range || {});
+                      const from = range?.from ? formatDate(range.from) : undefined;
+                      const to = range?.to ? formatDate(range.to) : undefined;
+                      setEosConfig((prev) => ({ ...prev, start_date: from ?? prev.start_date, end_date: to ?? prev.end_date }));
+                    }}
+                    numberOfMonths={2}
+                    className="rounded-md border border-border bg-background"
+                  />
+                  <p className="text-xs text-muted-foreground mt-2">Seleziona un range (default: ultimi 12 mesi)</p>
                 </div>
               </div>
 
               <div className="bg-primary/5 rounded-xl p-6 border border-border">
                 <h3 className="text-lg font-semibold text-foreground mb-4">⚡ Approccio Minimale</h3>
                 <div className="space-y-2 text-sm text-muted-foreground">
-                  <div>🌾 <strong>Coltura:</strong> {eosConfig.cropType}</div>
                   <div>📍 <strong>Area:</strong> {polygonData.area_ha} ha</div>
+                  <div>🗓️ <strong>Intervallo:</strong> {eosConfig.start_date} → {eosConfig.end_date}</div>
                   <div>🛰️ <strong>Solo 2 chiamate API</strong> invece di 5-10</div>
                   <div>📊 <strong>4 parametri essenziali:</strong> NDVI + NDMI + Fenologia + Meteo</div>
                   <div>💰 <strong>80% meno costi</strong> mantenendo 90% precisione</div>
@@ -685,6 +738,10 @@ const EOSTester: React.FC = () => {
                         <div className="text-sm text-muted-foreground">Status Campo</div>
                         <div className="font-medium text-foreground">
                           {testResults.vegetation.analysis.health_status}
+                        </div>
+                        <div className="text-sm text-muted-foreground mt-2">Fase fenologica</div>
+                        <div className="font-medium text-foreground">
+                          {testResults.vegetation.analysis.growth_stage}
                         </div>
                       </div>
                       <div className="bg-background rounded-lg p-4 border border-border">

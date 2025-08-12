@@ -80,11 +80,46 @@ serve(async (req) => {
           { date: "2024-03-26", NDVI: 0.69, NDMI: 0.36 },
           { date: "2024-04-03", NDVI: 0.73, NDMI: 0.39 },
         ],
-        analysis: { health_status: "moderate_stress", growth_stage: "tillering" },
+        analysis: { health_status: "normal", growth_stage: "stable" },
+      };
+
+      // Filter by requested date range if provided
+      const parseTs = (s: string) => new Date(s).getTime();
+      const sd = start_date ? parseTs(start_date) : undefined;
+      const ed = end_date ? parseTs(end_date) : undefined;
+      const filtered = vegetation.time_series.filter((p) => {
+        const t = parseTs(p.date);
+        if (sd && t < sd) return false;
+        if (ed && t > ed) return false;
+        return true;
+      });
+      const series = filtered.length ? filtered : vegetation.time_series;
+
+      // Simple phenology estimation from NDVI trend
+      const ndvis = series.map((p) => p.NDVI);
+      const last = ndvis[ndvis.length - 1] ?? 0;
+      const prev = ndvis[ndvis.length - 2] ?? last;
+      const slope = last - prev;
+      const max = ndvis.length ? Math.max(...ndvis) : 0;
+
+      let growth_stage = "unknown";
+      if (last < 0.2) growth_stage = "dormancy";
+      else if (slope > 0.02 && last > 0.3) growth_stage = "green-up";
+      else if (Math.abs(last - max) <= 0.05) growth_stage = "peak";
+      else if (slope < -0.02 && last < max - 0.1) growth_stage = "senescence";
+      else growth_stage = "stable";
+
+      const lastNDMI = series[series.length - 1]?.NDMI ?? 0;
+      const health_status = lastNDMI < 0.3 ? "moderate_stress" : "normal";
+
+      const out: VegetationData = {
+        ...vegetation,
+        time_series: series,
+        analysis: { health_status, growth_stage },
       };
 
       return new Response(
-        JSON.stringify({ vegetation, meta: { mode: eosKey ? "proxy-ready" : "missing-secret", start_date, end_date } }),
+        JSON.stringify({ vegetation: out, meta: { mode: eosKey ? "proxy-ready" : "missing-secret", start_date, end_date } }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
