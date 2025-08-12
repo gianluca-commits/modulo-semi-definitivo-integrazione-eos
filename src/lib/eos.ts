@@ -1,4 +1,5 @@
 // EOS service types and demo-mode utilities
+import { supabase } from "@/integrations/supabase/client";
 
 export type Coordinate = [number, number]; // [lon, lat]
 
@@ -129,9 +130,25 @@ export async function getVegetationTimeSeries(
     await new Promise((r) => setTimeout(r, 800));
     return demoVegetation();
   }
-  // TODO: Replace with call to Supabase Edge Function that proxies EOS API using a secret API key
-  await new Promise((r) => setTimeout(r, 800));
-  return demoVegetation();
+
+  // Live mode via Supabase Edge Function proxy
+  const { data, error } = await supabase.functions.invoke("eos-proxy", {
+    body: {
+      action: "vegetation",
+      polygon: _polygon,
+    },
+  });
+
+  if (error) {
+    console.error("eos-proxy vegetation error:", error);
+    // Fallback to demo to keep UX smooth
+    return demoVegetation();
+  }
+  if (!data || !("vegetation" in data)) {
+    console.warn("eos-proxy vegetation invalid response", data);
+    return demoVegetation();
+  }
+  return data.vegetation as VegetationData;
 }
 
 export async function getWeatherSummary(
@@ -142,7 +159,23 @@ export async function getWeatherSummary(
     await new Promise((r) => setTimeout(r, 600));
     return demoWeather();
   }
-  // TODO: Replace with call to Supabase Edge Function that proxies EOS API using a secret API key
-  await new Promise((r) => setTimeout(r, 600));
-  return demoWeather();
+
+  // Live mode via Supabase Edge Function proxy
+  const { data, error } = await supabase.functions.invoke("eos-proxy", {
+    body: {
+      action: "weather",
+      polygon: _polygon,
+    },
+  });
+
+  if (error) {
+    console.error("eos-proxy weather error:", error);
+    return demoWeather();
+  }
+  if (!data || !("weather" in data)) {
+    console.warn("eos-proxy weather invalid response", data);
+    return demoWeather();
+  }
+
+  return data.weather as WeatherData;
 }
