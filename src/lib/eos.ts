@@ -15,6 +15,8 @@ export interface EosConfig {
   cropType: "wheat" | "wine" | "olive" | (string & {});
   start_date?: string;
   end_date?: string;
+  // Optional: planting date to enhance phenology context (UI only for now)
+  planting_date?: string;
   // Optional cloud filtering params (used in live mode only)
   max_cloud_cover_in_aoi?: number; // 0-100
   exclude_cover_pixels?: boolean;   // exclude pixels flagged as cloudy

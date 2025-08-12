@@ -40,6 +40,7 @@ import {
 } from "recharts";
 import { kml as kmlToGeoJSON } from "@tmcw/togeojson";
 import { Calendar } from "@/components/ui/calendar";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 const EOSTester: React.FC = () => {
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
@@ -63,6 +64,7 @@ const EOSTester: React.FC = () => {
     cropType: "wheat",
     start_date: formatDate(startDefault),
     end_date: formatDate(today),
+    planting_date: "",
     max_cloud_cover_in_aoi: 30,
     exclude_cover_pixels: true,
     cloud_masking_level: 2,
@@ -626,6 +628,16 @@ const EOSTester: React.FC = () => {
                   <p className="text-xs text-muted-foreground mt-2">Seleziona un range (default: ultimi 12 mesi)</p>
                 </div>
 
+                <div className="bg-muted rounded-xl p-6 border border-border mt-6">
+                  <h3 className="text-lg font-semibold mb-4 text-foreground">Data semina (opzionale)</h3>
+                  <input
+                    type="date"
+                    value={eosConfig.planting_date ?? ""}
+                    onChange={(e) => setEosConfig((prev) => ({ ...prev, planting_date: e.target.value }))}
+                    className="w-full px-4 py-3 border border-border rounded-xl bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                  <p className="text-xs text-muted-foreground mt-2">Serve per mostrare giorni dalla semina e contestualizzare la fenologia.</p>
+                </div>
                 {/* Qualità immagine / Nuvole */}
                 <div className="bg-muted rounded-xl p-6 border border-border mt-6">
                   <h3 className="text-lg font-semibold mb-4 text-foreground">Qualità immagine</h3>
@@ -707,9 +719,9 @@ const EOSTester: React.FC = () => {
                 <h3 className="text-xl font-semibold text-foreground mb-2">Analisi EOS in Corso...</h3>
                 <div className="max-w-md mx-auto space-y-3">
                   {[
-                    { label: "Dati Vegetazione", done: testResults.vegetation },
-                    { label: "Dati Meteorologici", done: testResults.weather },
-                    { label: "Predizione Produttività", done: testResults.productivity },
+                    { label: "Dati Vegetazione", done: !!testResults.vegetation },
+                    { label: "Dati Meteorologici", done: !!testResults.weather },
+                    { label: "Pronto per stima produttività", done: !!(testResults.vegetation && testResults.weather) },
                   ].map((step, index) => (
                     <div
                       key={index}
@@ -729,120 +741,184 @@ const EOSTester: React.FC = () => {
               </div>
             )}
 
-            {!isLoading && testResults.productivity && testResults.vegetation && (
-              <div className="space-y-8">
-                {/* Key Metrics */}
-                <div className="grid md:grid-cols-3 gap-6">
-                  <div className="rounded-xl p-6 text-center bg-primary text-primary-foreground">
-                    <div className="text-3xl font-bold mb-2">
-                      {testResults.productivity.predicted_yield_ton_ha}
-                    </div>
-                    <div className="text-sm opacity-90">Produttività Prevista</div>
-                    <div className="text-xs opacity-75">ton/ha</div>
-                  </div>
+            {!isLoading && testResults.vegetation && testResults.weather && (
+              (() => {
+                const veg = testResults.vegetation!;
+                const met = testResults.weather!;
+                const ts = veg.time_series || [];
+                const last = ts[ts.length - 1];
+                const parseDate = (s: string) => new Date(s).getTime();
+                const lastTime = last ? parseDate(last.date) : 0;
+                const findPrev = (days: number) => {
+                  if (!ts.length || !lastTime) return undefined as any;
+                  const target = lastTime - days * 86400000;
+                  let prev = ts[0];
+                  for (const p of ts) {
+                    if (parseDate(p.date) <= target) prev = p;
+                  }
+                  return prev;
+                };
+                const avgInDays = (days: number, key: 'NDVI' | 'NDMI') => {
+                  if (!ts.length || !lastTime) return undefined;
+                  const from = lastTime - days * 86400000;
+                  const arr = ts.filter((p) => parseDate(p.date) >= from);
+                  const use = arr.length ? arr : ts;
+                  const sum = use.reduce((a, p) => a + (p[key] || 0), 0);
+                  return use.length ? Number((sum / use.length).toFixed(2)) : undefined;
+                };
+                const pct = (now?: number, prev?: number) => {
+                  if (now == null || prev == null || prev === 0) return undefined;
+                  return Number((((now - prev) / Math.abs(prev)) * 100).toFixed(1));
+                };
+                const ndvi_now = last?.NDVI;
+                const ndvi_prev30 = findPrev(30)?.NDVI;
+                const ndvi_trend = pct(ndvi_now, ndvi_prev30);
+                const ndvi_avg = avgInDays(30, 'NDVI');
 
-                  <div className="rounded-xl p-6 text-center bg-secondary text-secondary-foreground">
-                    <div className="text-3xl font-bold mb-2">
-                      {testResults.productivity.confidence_level}%
-                    </div>
-                    <div className="text-sm opacity-90">Confidenza</div>
-                    <div className="text-xs opacity-75">predizione</div>
-                  </div>
+                const ndmi_now = last?.NDMI;
+                const ndmi_prev14 = findPrev(14)?.NDMI;
+                const ndmi_trend = pct(ndmi_now, ndmi_prev14);
+                const water_stress =
+                  ndmi_now == null ? undefined : ndmi_now < 0.25 ? 'severe' : ndmi_now < 0.32 ? 'moderate' : ndmi_now < 0.4 ? 'mild' : 'none';
 
-                  <div className="rounded-xl p-6 text-center bg-accent text-accent-foreground">
-                    <div className="text-3xl font-bold mb-2">
-                      €{testResults.productivity.expected_revenue_eur_ha}
-                    </div>
-                    <div className="text-sm opacity-90">Ricavo Atteso</div>
-                    <div className="text-xs opacity-75">per ettaro</div>
-                  </div>
-                </div>
+                const planting = eosConfig.planting_date ? new Date(eosConfig.planting_date) : undefined;
+                const refDate = last?.date ? new Date(last.date) : new Date();
+                const days_from_planting = planting ? Math.max(0, Math.floor((+refDate - +planting) / 86400000)) : undefined;
 
-                {/* Detailed Results */}
-                <div className="grid lg:grid-cols-2 gap-8">
-                  <div className="bg-muted rounded-xl p-6 border border-border">
-                    <h3 className="text-lg font-semibold mb-4 flex items-center text-foreground">
-                      <Layers className="w-5 h-5 mr-2" />
-                      Dati Vegetazione
-                    </h3>
-                    <div className="space-y-4">
-                      <div className="bg-background rounded-lg p-4 border border-border">
-                        <div className="text-sm text-muted-foreground">Status Campo</div>
-                        <div className="font-medium text-foreground">
-                          {testResults.vegetation.analysis.health_status}
+                const alerts = met.alerts || [];
+                const heat = alerts.some((a) => a.toLowerCase().includes('heat') || a.toLowerCase().includes('caldo'));
+                const frost = alerts.some((a) => a.toLowerCase().includes('frost') || a.toLowerCase().includes('gel'));
+                const weather_risk = {
+                  temperature_stress_days: undefined as number | undefined,
+                  precipitation_deficit_mm: undefined as number | undefined,
+                  frost_risk_forecast_7d: frost,
+                  heat_stress_risk: (heat ? 'medium' : 'low') as 'low' | 'medium' | 'high',
+                };
+
+                const preview = {
+                  ndvi_data: {
+                    current_value: ndvi_now,
+                    trend_30_days: ndvi_trend,
+                    field_average: ndvi_avg,
+                    uniformity_score: undefined,
+                  },
+                  ndmi_data: {
+                    current_value: ndmi_now,
+                    water_stress_level: water_stress,
+                    trend_14_days: ndmi_trend,
+                    critical_threshold: 0.3,
+                  },
+                  phenology: {
+                    current_stage: veg.analysis.growth_stage,
+                    days_from_planting,
+                    expected_harvest_days: undefined,
+                    development_rate: 'normal',
+                  },
+                  weather_risks: weather_risk,
+                };
+
+                return (
+                  <div className="space-y-8">
+                    <div className="rounded-xl p-4 bg-secondary/30 border border-border">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-sm text-muted-foreground">
+                          Consultazione EOS per <span className="font-medium text-foreground">{polygonData.source || 'campo'}</span> • Coltura: <span className="font-medium text-foreground">{eosConfig.cropType}</span> • Periodo: {eosConfig.start_date} → {eosConfig.end_date}{eosConfig.planting_date ? ` • Semina: ${eosConfig.planting_date}` : ""}
                         </div>
-                        <div className="text-sm text-muted-foreground mt-2">Fase fenologica</div>
-                        <div className="font-medium text-foreground">
-                          {testResults.vegetation.analysis.growth_stage}
+                        <div className="flex items-center gap-2 text-foreground">
+                          <CheckCircle2 className="w-4 h-4" /> Vegetazione
+                          <CheckCircle2 className="w-4 h-4 ml-3" /> Meteo
                         </div>
                       </div>
+                    </div>
 
-                      {/* Meta info */}
-                      {testResults.vegetation.meta && (
-                        <div className="bg-background rounded-lg p-4 border border-border">
-                          <div className="text-sm text-muted-foreground">Osservazioni</div>
-                          <div className="font-medium text-foreground">{testResults.vegetation.meta.observation_count ?? testResults.vegetation.time_series.length}</div>
-                          {testResults.vegetation.meta.used_filters && (
-                            <div className="text-xs text-muted-foreground mt-2">
-                              Filtri: max cloud {testResults.vegetation.meta.used_filters.max_cloud_cover_in_aoi}% • mask lvl {testResults.vegetation.meta.used_filters.cloud_masking_level} • exclude cover {String(testResults.vegetation.meta.used_filters.exclude_cover_pixels)}
+                    <h3 className="text-xl font-semibold text-foreground">Parametri essenziali per la stima</h3>
+                    <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="rounded-xl p-4 bg-muted border border-border">
+                        <div className="text-sm text-muted-foreground mb-1">NDVI</div>
+                        <div className="text-2xl font-bold text-foreground">{ndvi_now ?? '—'}</div>
+                        <div className="text-xs text-muted-foreground mt-1">Trend 30gg: {ndvi_trend != null ? `${ndvi_trend}%` : '—'}</div>
+                        <div className="text-xs text-muted-foreground">Media campo: {ndvi_avg ?? '—'}</div>
+                      </div>
+
+                      <div className="rounded-xl p-4 bg-muted border border-border">
+                        <div className="text-sm text-muted-foreground mb-1">NDMI</div>
+                        <div className="text-2xl font-bold text-foreground">{ndmi_now ?? '—'}</div>
+                        <div className="text-xs text-muted-foreground mt-1">Stress idrico: {water_stress ?? '—'}</div>
+                        <div className="text-xs text-muted-foreground">Trend 14gg: {ndmi_trend != null ? `${ndmi_trend}%` : '—'}</div>
+                      </div>
+
+                      <div className="rounded-xl p-4 bg-muted border border-border">
+                        <div className="text-sm text-muted-foreground mb-1">Fenologia</div>
+                        <div className="text-2xl font-bold text-foreground">{veg.analysis.growth_stage || '—'}</div>
+                        <div className="text-xs text-muted-foreground mt-1">Giorni dalla semina: {days_from_planting ?? '—'}</div>
+                        <div className="text-xs text-muted-foreground">Sviluppo: normal</div>
+                      </div>
+
+                      <div className="rounded-xl p-4 bg-muted border border-border">
+                        <div className="text-sm text-muted-foreground mb-1">Meteo</div>
+                        <div className="text-2xl font-bold text-foreground">{(met.temperature_avg as any)?.toFixed ? (met.temperature_avg as any).toFixed(1) : met.temperature_avg}°C</div>
+                        <div className="text-xs text-muted-foreground mt-1">Pioggia stagione: {met.precipitation_total ?? '—'} mm</div>
+                        <div className="text-xs text-muted-foreground">Rischi: {alerts.length ? alerts.join(' • ') : 'nessuno'}</div>
+                      </div>
+                    </div>
+
+                    <div className="bg-muted rounded-xl p-4 border border-border">
+                      <Accordion type="single" collapsible className="w-full">
+                        <AccordionItem value="json">
+                          <AccordionTrigger>Anteprima tecnica (JSON) — parametri essenziali</AccordionTrigger>
+                          <AccordionContent>
+                            <pre className="mt-3 p-3 bg-background rounded-lg border border-border text-xs overflow-auto">{JSON.stringify(preview, null, 2)}</pre>
+                          </AccordionContent>
+                        </AccordionItem>
+                      </Accordion>
+                    </div>
+
+                    <div className="grid lg:grid-cols-2 gap-8">
+                      <div className="bg-muted rounded-xl p-6 border border-border">
+                        <h3 className="text-lg font-semibold mb-4 flex items-center text-foreground">
+                          <Layers className="w-5 h-5 mr-2" />
+                          Dati Vegetazione
+                        </h3>
+                        <div className="space-y-4">
+                          {veg.meta && (
+                            <div className="bg-background rounded-lg p-4 border border-border">
+                              <div className="text-sm text-muted-foreground">Osservazioni</div>
+                              <div className="font-medium text-foreground">{veg.meta.observation_count ?? veg.time_series.length}</div>
                             </div>
                           )}
+                          <div className="bg-background rounded-lg p-4 border border-border">
+                            <div className="text-sm text-muted-foreground mb-2">NDVI (ultime osservazioni)</div>
+                            <div className="h-48">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={veg.time_series}>
+                                  <CartesianGrid strokeDasharray="3 3" />
+                                  <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                                  <YAxis domain={[0, 1]} tick={{ fontSize: 12 }} />
+                                  <ReTooltip />
+                                  <Line type="monotone" dataKey="NDVI" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
+                                </LineChart>
+                              </ResponsiveContainer>
+                            </div>
+                          </div>
                         </div>
-                      )}
+                      </div>
 
-                      <div className="bg-background rounded-lg p-4 border border-border">
-                        <div className="text-sm text-muted-foreground mb-2">NDVI (ultime osservazioni)</div>
-                        <div className="h-48">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={testResults.vegetation.time_series}>
-                              <CartesianGrid strokeDasharray="3 3" />
-                              <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-                              <YAxis domain={[0, 1]} tick={{ fontSize: 12 }} />
-                              <ReTooltip />
-                              <Line type="monotone" dataKey="NDVI" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
-                            </LineChart>
-                          </ResponsiveContainer>
-                        </div>
+                      <div className="rounded-xl p-6 border border-border bg-primary/5">
+                        <h3 className="text-xl font-semibold text-foreground mb-2">Prossimo passo</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Utilizzeremo questi 4 parametri per calcolare la produttività prevista (ton/ha).
+                        </p>
+                        <button
+                          className="mt-4 px-6 py-3 rounded-xl bg-muted text-foreground border border-border cursor-not-allowed"
+                          disabled
+                        >
+                          Stima Produttività — in arrivo
+                        </button>
                       </div>
                     </div>
                   </div>
-
-                  <div className="bg-muted rounded-xl p-6 border border-border">
-                    <h3 className="text-lg font-semibold mb-4 text-foreground">Raccomandazioni</h3>
-                    <div className="space-y-2">
-                      {testResults.productivity.recommendations.map((rec, idx) => (
-                        <div key={idx} className="flex items-start text-sm text-foreground p-3 bg-background rounded-lg border border-border">
-                          <ArrowRight className="w-3 h-3 mr-2 mt-0.5" />
-                          {rec}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Efficiency Summary */}
-                <div className="rounded-xl p-6 border border-border bg-primary/5">
-                  <h3 className="text-xl font-semibold text-foreground mb-4">⚡ Efficienza Approccio Minimale</h3>
-                  <div className="grid md:grid-cols-4 gap-4">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-foreground">2</div>
-                      <div className="text-sm text-muted-foreground">Chiamate API</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-foreground">4</div>
-                      <div className="text-sm text-muted-foreground">Parametri Core</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-foreground">90%</div>
-                      <div className="text-sm text-muted-foreground">Accuratezza</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-foreground">80%</div>
-                      <div className="text-sm text-muted-foreground">Costi Ridotti</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                );
+              })()
             )}
 
             <div className="flex justify-center mt-8">
