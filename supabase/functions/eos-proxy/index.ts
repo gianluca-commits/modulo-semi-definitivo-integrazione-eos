@@ -70,32 +70,112 @@ serve(async (req) => {
     // const apiData = await resp.json();
 
     if (action === "vegetation") {
-      const vegetation: VegetationData = {
-        field_id: "LIVE_FIELD",
-        satellite: "Sentinel-2",
-        time_series: [
-          { date: "2024-03-01", NDVI: 0.62, NDMI: 0.33 },
-          { date: "2024-03-10", NDVI: 0.67, NDMI: 0.35 },
-          { date: "2024-03-18", NDVI: 0.71, NDMI: 0.38 },
-          { date: "2024-03-26", NDVI: 0.69, NDMI: 0.36 },
-          { date: "2024-04-03", NDVI: 0.73, NDMI: 0.39 },
-        ],
-        analysis: { health_status: "normal", growth_stage: "stable" },
+      const apiKey = Deno.env.get("EOS_DATA_API_KEY") || Deno.env.get("EOS_STATISTICS_BEARER");
+      if (!apiKey) {
+        return new Response(
+          JSON.stringify({ error: "Missing EOS API key. Please set EOS_DATA_API_KEY in Supabase secrets." }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Build GeoJSON geometry from input
+      const buildGeometry = () => {
+        if (polygon?.coordinates && polygon.coordinates.length >= 4) {
+          const coords = polygon.coordinates as unknown as [number, number][];
+          const first = coords[0];
+          const last = coords[coords.length - 1];
+          const ring = first[0] === last[0] && first[1] === last[1] ? coords : [...coords, first];
+          return { type: "Polygon", coordinates: [ring] } as const;
+        }
+        if (polygon?.geojson) {
+          try {
+            const parsed = JSON.parse(polygon.geojson);
+            if (parsed?.type === "Polygon") return parsed;
+            if (parsed?.type === "Feature" && parsed.geometry?.type === "Polygon") return parsed.geometry;
+            if (parsed?.type === "FeatureCollection" && parsed.features?.[0]?.geometry?.type === "Polygon") return parsed.features[0].geometry;
+          } catch (_) {
+            // ignore
+          }
+        }
+        throw new Error("Invalid polygon geometry");
       };
 
-      // Filter by requested date range if provided
-      const parseTs = (s: string) => new Date(s).getTime();
-      const sd = start_date ? parseTs(start_date) : undefined;
-      const ed = end_date ? parseTs(end_date) : undefined;
-      const filtered = vegetation.time_series.filter((p) => {
-        const t = parseTs(p.date);
-        if (sd && t < sd) return false;
-        if (ed && t > ed) return false;
-        return true;
-      });
-      const series = filtered.length ? filtered : vegetation.time_series;
+      const geometry = buildGeometry();
 
-      // Simple phenology estimation from NDVI trend
+      const sd = start_date ?? new Date(Date.now() - 60 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+      const ed = end_date ?? new Date().toISOString().slice(0, 10);
+
+      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+      // Create statistics task and poll until finished; returns map of date->average
+      const createAndFetchStats = async (indexName: string): Promise<Record<string, number>> => {
+        const createUrl = `https://api-connect.eos.com/api/gdw/api?api_key=${apiKey}`;
+        const body = {
+          type: "mt_stats",
+          params: {
+            bm_type: [indexName],
+            date_start: sd,
+            date_end: ed,
+            geometry,
+            reference: `lov-${Date.now()}-${indexName}`,
+            sensors: ["sentinel2l2a"],
+            max_cloud_cover_in_aoi: 30,
+            exclude_cover_pixels: true,
+            cloud_masking_level: 2,
+          },
+        };
+
+        const createResp = await fetch(createUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!createResp.ok) {
+          const msg = await createResp.text();
+          throw new Error(`Stats task create failed: ${createResp.status} ${msg}`);
+        }
+        const createJson = await createResp.json();
+        const taskId = createJson?.task_id as string;
+        if (!taskId) throw new Error("No task_id from statistics create");
+
+        const statusUrl = `https://api-connect.eos.com/api/gdw/api/${taskId}?api_key=${apiKey}`;
+        let attempts = 0;
+        while (attempts < 15) {
+          attempts++;
+          const st = await fetch(statusUrl);
+          if (!st.ok) {
+            const t = await st.text();
+            throw new Error(`Stats status failed: ${st.status} ${t}`);
+          }
+          const stJson = await st.json();
+          if (stJson?.result && Array.isArray(stJson.result)) {
+            const map: Record<string, number> = {};
+            for (const r of stJson.result) {
+              if (r?.date && (typeof r.average === "number" || typeof r.average === "string")) {
+                map[r.date] = Number(r.average);
+              }
+            }
+            return map;
+          }
+          await sleep(6000); // Respect 10 RPM rate limit on status endpoint
+        }
+        throw new Error("Statistics task timed out");
+      };
+
+      // Fetch NDVI and NDMI separately to ensure predictable schema
+      const [ndviMap, ndmiMap] = await Promise.all([
+        createAndFetchStats("NDVI"),
+        createAndFetchStats("NDMI"),
+      ]);
+
+      const allDates = Array.from(new Set([...Object.keys(ndviMap), ...Object.keys(ndmiMap)])).sort();
+      const series = allDates.map((d) => ({
+        date: d,
+        NDVI: Number(ndviMap[d] ?? 0),
+        NDMI: Number(ndmiMap[d] ?? 0),
+      }));
+
+      // Phenology estimation from NDVI trend
       const ndvis = series.map((p) => p.NDVI);
       const last = ndvis[ndvis.length - 1] ?? 0;
       const prev = ndvis[ndvis.length - 2] ?? last;
@@ -113,26 +193,87 @@ serve(async (req) => {
       const health_status = lastNDMI < 0.3 ? "moderate_stress" : "normal";
 
       const out: VegetationData = {
-        ...vegetation,
+        field_id: "LIVE_FIELD",
+        satellite: "Sentinel-2",
         time_series: series,
         analysis: { health_status, growth_stage },
       };
 
       return new Response(
-        JSON.stringify({ vegetation: out, meta: { mode: eosKey ? "proxy-ready" : "missing-secret", start_date, end_date } }),
+        JSON.stringify({ vegetation: out, meta: { mode: "live", start_date: sd, end_date: ed } }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     if (action === "weather") {
-      const weather: WeatherData = {
-        temperature_avg: 12.2,
-        precipitation_total: 138.5,
-        alerts: ["Stress idrico potenziale"],
+      const apiKey = Deno.env.get("EOS_DATA_API_KEY");
+      if (!apiKey) {
+        return new Response(
+          JSON.stringify({ error: "Missing EOS API key. Please set EOS_DATA_API_KEY in Supabase secrets." }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Build GeoJSON geometry
+      const buildGeometry = () => {
+        if (polygon?.coordinates && polygon.coordinates.length >= 4) {
+          const coords = polygon.coordinates as unknown as [number, number][];
+          const first = coords[0];
+          const last = coords[coords.length - 1];
+          const ring = first[0] === last[0] && first[1] === last[1] ? coords : [...coords, first];
+          return { type: "Polygon", coordinates: [ring] } as const;
+        }
+        if (polygon?.geojson) {
+          try {
+            const parsed = JSON.parse(polygon.geojson);
+            if (parsed?.type === "Polygon") return parsed;
+            if (parsed?.type === "Feature" && parsed.geometry?.type === "Polygon") return parsed.geometry;
+            if (parsed?.type === "FeatureCollection" && parsed.features?.[0]?.geometry?.type === "Polygon") return parsed.features[0].geometry;
+          } catch (_) {}
+        }
+        throw new Error("Invalid polygon geometry");
       };
+      const geometry = buildGeometry();
+
+      const sd = start_date ?? new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+      const ed = end_date ?? new Date().toISOString().slice(0, 10);
+
+      const url = `https://api-connect.eos.com/api/cz/backend/forecast-history/?api_key=${apiKey}`;
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ geometry, start_date: sd, end_date: ed }),
+      });
+      if (!resp.ok) {
+        const msg = await resp.text();
+        throw new Error(`Weather history failed: ${resp.status} ${msg}`);
+      }
+      const json = await resp.json();
+      const days = Array.isArray(json) ? json : [];
+
+      let tempSum = 0;
+      let tempCount = 0;
+      let precipTotal = 0;
+      for (const d of days) {
+        const tmin = Number(d.temperature_min);
+        const tmax = Number(d.temperature_max);
+        if (!Number.isNaN(tmin) && !Number.isNaN(tmax)) {
+          tempSum += (tmin + tmax) / 2;
+          tempCount += 1;
+        }
+        const rain = Number(d.rainfall);
+        if (!Number.isNaN(rain)) precipTotal += rain;
+      }
+      const temperature_avg = tempCount ? Number((tempSum / tempCount).toFixed(1)) : 0;
+      const precipitation_total = Number(precipTotal.toFixed(1));
+
+      const alerts: string[] = [];
+      if (precipitation_total < 10 && temperature_avg > 15) alerts.push("Stress idrico potenziale");
+
+      const weather: WeatherData = { temperature_avg, precipitation_total, alerts };
 
       return new Response(
-        JSON.stringify({ weather, meta: { mode: eosStatsBearer ? "proxy-ready" : "missing-secret", start_date, end_date } }),
+        JSON.stringify({ weather, meta: { mode: "live", start_date: sd, end_date: ed } }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
