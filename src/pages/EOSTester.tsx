@@ -22,12 +22,14 @@ import type {
   ProductivityData,
   VegetationData,
   WeatherData,
+  EosSummary,
 } from "@/lib/eos";
 import {
   calculateAreaHa,
   computeProductivity,
   getVegetationTimeSeries,
   getWeatherSummary,
+  getEosSummary,
 } from "@/lib/eos";
 import {
   LineChart,
@@ -83,8 +85,8 @@ const EOSTester: React.FC = () => {
     vegetation: null,
     weather: null,
     productivity: null,
-  });
 
+  const [summary, setSummary] = useState<EosSummary | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<string>("");
   const [showApiKey, setShowApiKey] = useState(false);
@@ -385,6 +387,7 @@ const EOSTester: React.FC = () => {
     setCurrentStep(1);
     setPolygonData({ geojson: "", coordinates: [], source: "", area_ha: 0 });
     setTestResults({ vegetation: null, weather: null, productivity: null });
+    setSummary(null);
     setErrors("");
   };
 
@@ -785,6 +788,16 @@ const EOSTester: React.FC = () => {
                 const refDate = last?.date ? new Date(last.date) : new Date();
                 const days_from_planting = planting ? Math.max(0, Math.floor((+refDate - +planting) / 86400000)) : undefined;
 
+                // Prefer unified summary values when available
+                const ndvi_now_disp = (summary as EosSummary | null)?.ndvi_data?.current_value ?? ndvi_now;
+                const ndvi_trend_disp = (summary as EosSummary | null)?.ndvi_data?.trend_30_days ?? ndvi_trend;
+                const ndvi_avg_disp = (summary as EosSummary | null)?.ndvi_data?.field_average ?? ndvi_avg;
+                const ndmi_now_disp = (summary as EosSummary | null)?.ndmi_data?.current_value ?? ndmi_now;
+                const ndmi_trend_disp = (summary as EosSummary | null)?.ndmi_data?.trend_14_days ?? ndmi_trend;
+                const water_stress_disp = (summary as EosSummary | null)?.ndmi_data?.water_stress_level ?? water_stress;
+                const phen_stage_disp = (summary as EosSummary | null)?.phenology?.current_stage ?? veg.analysis.growth_stage;
+                const days_from_planting_disp = (summary as EosSummary | null)?.phenology?.days_from_planting ?? days_from_planting;
+
                 const alerts = met.alerts || [];
                 const heat = alerts.some((a) => a.toLowerCase().includes('heat') || a.toLowerCase().includes('caldo'));
                 const frost = alerts.some((a) => a.toLowerCase().includes('frost') || a.toLowerCase().includes('gel'));
@@ -835,22 +848,22 @@ const EOSTester: React.FC = () => {
                     <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
                       <div className="rounded-xl p-4 bg-muted border border-border">
                         <div className="text-sm text-muted-foreground mb-1">NDVI</div>
-                        <div className="text-2xl font-bold text-foreground">{ndvi_now ?? '—'}</div>
-                        <div className="text-xs text-muted-foreground mt-1">Trend 30gg: {ndvi_trend != null ? `${ndvi_trend}%` : '—'}</div>
-                        <div className="text-xs text-muted-foreground">Media campo: {ndvi_avg ?? '—'}</div>
+                        <div className="text-2xl font-bold text-foreground">{ndvi_now_disp ?? '—'}</div>
+                        <div className="text-xs text-muted-foreground mt-1">Trend 30gg: {ndvi_trend_disp != null ? `${ndvi_trend_disp}%` : '—'}</div>
+                        <div className="text-xs text-muted-foreground">Media campo: {ndvi_avg_disp ?? '—'}</div>
                       </div>
 
                       <div className="rounded-xl p-4 bg-muted border border-border">
                         <div className="text-sm text-muted-foreground mb-1">NDMI</div>
-                        <div className="text-2xl font-bold text-foreground">{ndmi_now ?? '—'}</div>
-                        <div className="text-xs text-muted-foreground mt-1">Stress idrico: {water_stress ?? '—'}</div>
-                        <div className="text-xs text-muted-foreground">Trend 14gg: {ndmi_trend != null ? `${ndmi_trend}%` : '—'}</div>
+                        <div className="text-2xl font-bold text-foreground">{ndmi_now_disp ?? '—'}</div>
+                        <div className="text-xs text-muted-foreground mt-1">Stress idrico: {water_stress_disp ?? '—'}</div>
+                        <div className="text-xs text-muted-foreground">Trend 14gg: {ndmi_trend_disp != null ? `${ndmi_trend_disp}%` : '—'}</div>
                       </div>
 
                       <div className="rounded-xl p-4 bg-muted border border-border">
                         <div className="text-sm text-muted-foreground mb-1">Fenologia</div>
-                        <div className="text-2xl font-bold text-foreground">{veg.analysis.growth_stage || '—'}</div>
-                        <div className="text-xs text-muted-foreground mt-1">Giorni dalla semina: {days_from_planting ?? '—'}</div>
+                        <div className="text-2xl font-bold text-foreground">{phen_stage_disp || '—'}</div>
+                        <div className="text-xs text-muted-foreground mt-1">Giorni dalla semina: {days_from_planting_disp ?? '—'}</div>
                         <div className="text-xs text-muted-foreground">Sviluppo: normal</div>
                       </div>
 
@@ -867,7 +880,7 @@ const EOSTester: React.FC = () => {
                         <AccordionItem value="json">
                           <AccordionTrigger>Anteprima tecnica (JSON) — parametri essenziali</AccordionTrigger>
                           <AccordionContent>
-                            <pre className="mt-3 p-3 bg-background rounded-lg border border-border text-xs overflow-auto">{JSON.stringify(preview, null, 2)}</pre>
+                            <pre className="mt-3 p-3 bg-background rounded-lg border border-border text-xs overflow-auto">{JSON.stringify(summary ?? preview, null, 2)}</pre>
                           </AccordionContent>
                         </AccordionItem>
                       </Accordion>

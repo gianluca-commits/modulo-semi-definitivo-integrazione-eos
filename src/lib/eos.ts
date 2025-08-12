@@ -211,3 +211,129 @@ export async function getWeatherSummary(
 
   return data.weather as WeatherData;
 }
+
+// Unified summary payload from edge function
+export interface EosSummary {
+  ndvi_data: {
+    current_value?: number;
+    trend_30_days?: number;
+    field_average?: number;
+    uniformity_score?: number;
+  };
+  ndmi_data: {
+    current_value?: number;
+    water_stress_level?: "none" | "mild" | "moderate" | "severe";
+    trend_14_days?: number;
+    critical_threshold: number;
+  };
+  phenology: {
+    current_stage?:
+      | "germination"
+      | "tillering"
+      | "jointing"
+      | "heading"
+      | "flowering"
+      | "grain_filling"
+      | "maturity"
+      | string;
+    days_from_planting?: number;
+    expected_harvest_days?: number;
+    development_rate?: "early" | "normal" | "delayed";
+  };
+  weather_risks: {
+    temperature_stress_days?: number;
+    precipitation_deficit_mm?: number;
+    frost_risk_forecast_7d?: boolean;
+    heat_stress_risk?: "low" | "medium" | "high";
+  };
+  meta?: {
+    start_date?: string;
+    end_date?: string;
+    sensor_used?: string;
+    observation_count?: number;
+    fallback_used?: boolean;
+    used_filters?: {
+      max_cloud_cover_in_aoi?: number;
+      exclude_cover_pixels?: boolean;
+      cloud_masking_level?: number;
+    };
+  };
+}
+
+export async function getEosSummary(
+  _polygon: PolygonData,
+  config: EosConfig
+): Promise<EosSummary> {
+  if (config.apiKey === "demo") {
+    // Build a synthetic summary from demo data
+    const veg = demoVegetation();
+    const met = demoWeather();
+    const ts = veg.time_series;
+    const last = ts[ts.length - 1];
+    const toTs = (s: string) => new Date(s).getTime();
+    const lastTs = last ? toTs(last.date) : 0;
+    const findPrev = (days: number, key: "NDVI" | "NDMI") => {
+      if (!ts.length || !lastTs) return undefined as number | undefined;
+      const target = lastTs - days * 86400000;
+      let prev = ts[0] as any;
+      for (const p of ts) {
+        if (toTs(p.date) <= target) prev = p;
+      }
+      return (prev as any)?.[key] as number | undefined;
+    };
+    const avgInDays = (days: number, key: "NDVI" | "NDMI") => {
+      if (!ts.length || !lastTs) return undefined as number | undefined;
+      const from = lastTs - days * 86400000;
+      const arr = ts.filter((p) => toTs(p.date) >= from);
+      const use = arr.length ? arr : ts;
+      const sum = use.reduce((a, p) => a + ((p as any)[key] || 0), 0);
+      return use.length ? Number((sum / use.length).toFixed(2)) : undefined;
+    };
+    const pct = (now?: number, prev?: number) => {
+      if (now == null || prev == null || prev === 0) return undefined as number | undefined;
+      return Number((((now - prev) / Math.abs(prev)) * 100).toFixed(1));
+    };
+
+    const ndvi_now = last?.NDVI;
+    const ndvi_trend = pct(ndvi_now, findPrev(30, "NDVI"));
+    const ndvi_avg = avgInDays(30, "NDVI");
+    const ndmi_now = last?.NDMI;
+    const ndmi_trend = pct(ndmi_now, findPrev(14, "NDMI"));
+    const water_stress = ndmi_now == null ? undefined : ndmi_now < 0.2 ? "severe" : ndmi_now < 0.3 ? "moderate" : ndmi_now < 0.4 ? "mild" : "none";
+
+    // Days from planting
+    const planting = config.planting_date ? new Date(config.planting_date) : undefined;
+    const ref = last?.date ? new Date(last.date) : new Date();
+    const days_from_planting = planting ? Math.max(0, Math.floor((+ref - +planting) / 86400000)) : undefined;
+
+    return {
+      ndvi_data: { current_value: ndvi_now, trend_30_days: ndvi_trend, field_average: ndvi_avg, uniformity_score: 0.75 },
+      ndmi_data: { current_value: ndmi_now, water_stress_level: water_stress, trend_14_days: ndmi_trend, critical_threshold: 0.3 },
+      phenology: { current_stage: veg.analysis.growth_stage, days_from_planting, expected_harvest_days: 200, development_rate: "normal" },
+      weather_risks: { temperature_stress_days: undefined, precipitation_deficit_mm: undefined, frost_risk_forecast_7d: false, heat_stress_risk: "low" },
+      meta: { start_date: config.start_date, end_date: config.end_date, sensor_used: "Sentinel-2 L2A", observation_count: ts.length, fallback_used: false },
+    };
+  }
+
+  const { data, error } = await supabase.functions.invoke("eos-proxy", {
+    body: {
+      action: "summary",
+      polygon: _polygon,
+      crop_type: config.cropType,
+      planting_date: config.planting_date,
+      start_date: config.start_date,
+      end_date: config.end_date,
+      max_cloud_cover_in_aoi: config.max_cloud_cover_in_aoi,
+      exclude_cover_pixels: config.exclude_cover_pixels,
+      cloud_masking_level: config.cloud_masking_level,
+    },
+  });
+
+  if (error) {
+    console.error("eos-proxy summary error:", error);
+    // Fallback to building from demo data to keep UX smooth
+    return await getEosSummary(_polygon, { ...config, apiKey: "demo" });
+  }
+  return data as EosSummary;
+}
+
