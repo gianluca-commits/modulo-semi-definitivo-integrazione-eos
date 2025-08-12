@@ -38,6 +38,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
+import { kml as kmlToGeoJSON } from "@tmcw/togeojson";
 
 const EOSTester: React.FC = () => {
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
@@ -179,6 +180,122 @@ const EOSTester: React.FC = () => {
         description: msg,
         variant: "destructive",
       });
+    }
+  };
+
+  const handleFileUpload = async (file: File) => {
+    try {
+      const name = file.name;
+      const lower = name.toLowerCase();
+      let coords: [number, number][] | null = null;
+
+      if (lower.endsWith(".kml") || file.type.includes("kml")) {
+        const text = await file.text();
+        const doc = new DOMParser().parseFromString(text, "text/xml");
+        const gj: any = kmlToGeoJSON(doc);
+
+        const pickPolygon = (geojson: any): [number, number][] | null => {
+          const polygons: [number, number][][] = [];
+
+          const pushFromGeom = (geom: any) => {
+            if (!geom) return;
+            if (geom.type === "Polygon" && Array.isArray(geom.coordinates)) {
+              polygons.push(geom.coordinates[0]);
+            } else if (geom.type === "MultiPolygon" && Array.isArray(geom.coordinates)) {
+              for (const poly of geom.coordinates) {
+                if (Array.isArray(poly) && poly[0]) polygons.push(poly[0]);
+              }
+            } else if (geom.type === "GeometryCollection" && Array.isArray(geom.geometries)) {
+              geom.geometries.forEach(pushFromGeom);
+            }
+          };
+
+          if (geojson.type === "FeatureCollection" && Array.isArray(geojson.features)) {
+            geojson.features.forEach((f: any) => pushFromGeom(f.geometry));
+          } else if (geojson.type === "Feature") {
+            pushFromGeom(geojson.geometry);
+          } else if (geojson.type === "Polygon" || geojson.type === "MultiPolygon") {
+            pushFromGeom(geojson);
+          }
+
+          if (!polygons.length) return null;
+          // Choose the polygon with the largest area
+          let best = polygons[0];
+          let bestArea = calculateAreaHa(best as any);
+          for (const p of polygons.slice(1)) {
+            const a = calculateAreaHa(p as any);
+            if (a > bestArea) {
+              best = p;
+              bestArea = a;
+            }
+          }
+          return best as any;
+        };
+
+        coords = pickPolygon(gj);
+        if (!coords) throw new Error("Nessun Polygon valido trovato nel KML");
+      } else if (lower.endsWith(".geojson") || lower.endsWith(".json") || file.type.includes("json")) {
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        // Reuse the same picker for GeoJSON
+        const pickFromGeoJSON = (geojson: any): [number, number][] | null => {
+          const polygons: [number, number][][] = [];
+          const pushFromGeom = (geom: any) => {
+            if (!geom) return;
+            if (geom.type === "Polygon" && Array.isArray(geom.coordinates)) {
+              polygons.push(geom.coordinates[0]);
+            } else if (geom.type === "MultiPolygon" && Array.isArray(geom.coordinates)) {
+              for (const poly of geom.coordinates) {
+                if (Array.isArray(poly) && poly[0]) polygons.push(poly[0]);
+              }
+            } else if (geom.type === "GeometryCollection" && Array.isArray(geom.geometries)) {
+              geom.geometries.forEach(pushFromGeom);
+            }
+          };
+          if (parsed.type === "FeatureCollection" && Array.isArray(parsed.features)) {
+            parsed.features.forEach((f: any) => pushFromGeom(f.geometry));
+          } else if (parsed.type === "Feature") {
+            pushFromGeom(parsed.geometry);
+          } else if (parsed.type === "Polygon" || parsed.type === "MultiPolygon") {
+            pushFromGeom(parsed);
+          }
+          if (!polygons.length) return null;
+          let best = polygons[0];
+          let bestArea = calculateAreaHa(best as any);
+          for (const p of polygons.slice(1)) {
+            const a = calculateAreaHa(p as any);
+            if (a > bestArea) {
+              best = p;
+              bestArea = a;
+            }
+          }
+          return best as any;
+        };
+        coords = pickFromGeoJSON(parsed);
+        if (!coords) throw new Error("Il file non contiene un Polygon valido");
+      } else {
+        throw new Error("Formato file non supportato. Usa .kml, .geojson o .json");
+      }
+
+      // Normalize: ensure closed ring
+      if (coords && coords.length && (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1])) {
+        coords = [...coords, coords[0]] as any;
+      }
+
+      const geoJson = { type: "Polygon", coordinates: [coords] };
+      const area = calculateAreaHa(coords as any);
+      setPolygonData({
+        geojson: JSON.stringify(geoJson, null, 2),
+        coordinates: coords as any,
+        source: name,
+        area_ha: area,
+      });
+      setErrors("");
+      toast({ title: "File caricato", description: `Poligono rilevato da ${name}` });
+    } catch (e: any) {
+      const msg = e?.message ?? "Errore nella lettura del file";
+      setErrors(msg);
+      toast({ title: "Errore file", description: msg, variant: "destructive" });
     }
   };
 
@@ -340,6 +457,23 @@ const EOSTester: React.FC = () => {
                   </div>
                 </button>
               ))}
+            </div>
+
+            {/* File upload for KML/GeoJSON */}
+            <div className="space-y-2 mb-6">
+              <h3 className="text-lg font-semibold text-foreground">Oppure carica file KML/GeoJSON</h3>
+              <input
+                type="file"
+                accept=".kml,.geojson,.json,application/vnd.google-earth.kml+xml,application/json"
+                onChange={async (e) => {
+                  const file = e.currentTarget.files?.[0];
+                  if (file) await handleFileUpload(file);
+                  // Allow reupload of the same file
+                  e.currentTarget.value = "";
+                }}
+                className="w-full px-4 py-3 border border-border rounded-xl bg-background text-foreground file:mr-4 file:py-2 file:px-3 file:rounded-md file:border-0 file:bg-muted file:text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+              <p className="text-xs text-muted-foreground">Seleziona un file .kml, .geojson o .json contenente un Polygon.</p>
             </div>
 
             {/* GeoJSON manual paste */}
