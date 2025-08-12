@@ -105,12 +105,24 @@ serve(async (req) => {
       const sd = start_date ?? new Date(Date.now() - 60 * 24 * 3600 * 1000).toISOString().slice(0, 10);
       const ed = end_date ?? new Date().toISOString().slice(0, 10);
 
+      // Read optional filters from request (with safe defaults)
+      const maxCloud = typeof (body as any)?.max_cloud_cover_in_aoi === "number"
+        ? Math.max(0, Math.min(100, (body as any).max_cloud_cover_in_aoi))
+        : 30;
+      const excludeCover = typeof (body as any)?.exclude_cover_pixels === "boolean"
+        ? (body as any).exclude_cover_pixels
+        : true;
+      const cml = typeof (body as any)?.cloud_masking_level === "number" ? (body as any).cloud_masking_level : 2;
+
       const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
       // Create statistics task and poll until finished; returns map of date->average
-      const createAndFetchStats = async (indexName: string): Promise<Record<string, number>> => {
+      const createAndFetchStats = async (
+        indexName: string,
+        filters: { maxCloud: number; excludeCover: boolean; cml: number }
+      ): Promise<Record<string, number>> => {
         const createUrl = `https://api-connect.eos.com/api/gdw/api?api_key=${apiKey}`;
-        const body = {
+        const bodyPayload = {
           type: "mt_stats",
           params: {
             bm_type: [indexName],
@@ -119,16 +131,16 @@ serve(async (req) => {
             geometry,
             reference: `lov-${Date.now()}-${indexName}`,
             sensors: ["sentinel2l2a"],
-            max_cloud_cover_in_aoi: 30,
-            exclude_cover_pixels: true,
-            cloud_masking_level: 2,
+            max_cloud_cover_in_aoi: filters.maxCloud,
+            exclude_cover_pixels: filters.excludeCover,
+            cloud_masking_level: filters.cml,
           },
-        };
+        } as const;
 
         const createResp = await fetch(createUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
+          body: JSON.stringify(bodyPayload),
         });
         if (!createResp.ok) {
           const msg = await createResp.text();
@@ -140,7 +152,7 @@ serve(async (req) => {
 
         const statusUrl = `https://api-connect.eos.com/api/gdw/api/${taskId}?api_key=${apiKey}`;
         let attempts = 0;
-        while (attempts < 15) {
+        while (attempts < 18) { // ~108s max
           attempts++;
           const st = await fetch(statusUrl);
           if (!st.ok) {
@@ -162,11 +174,25 @@ serve(async (req) => {
         throw new Error("Statistics task timed out");
       };
 
-      // Fetch NDVI and NDMI separately to ensure predictable schema
-      const [ndviMap, ndmiMap] = await Promise.all([
-        createAndFetchStats("NDVI"),
-        createAndFetchStats("NDMI"),
-      ]);
+      // First attempt with requested/default filters
+      let fallback_used = false;
+      const ndviMap1 = await createAndFetchStats("NDVI", { maxCloud, excludeCover, cml });
+      const ndmiMap1 = await createAndFetchStats("NDMI", { maxCloud, excludeCover, cml });
+
+      let ndviMap = ndviMap1;
+      let ndmiMap = ndmiMap1;
+
+      const initialDates = Array.from(new Set([...Object.keys(ndviMap1), ...Object.keys(ndmiMap1)]));
+      if (initialDates.length === 0) {
+        // Retry once with more tolerant filters
+        fallback_used = true;
+        const tMaxCloud = Math.max(maxCloud, 60);
+        const tExclude = false;
+        const tCml = 1;
+        console.log("EOS stats empty, retrying with tolerant filters", { tMaxCloud, tExclude, tCml });
+        ndviMap = await createAndFetchStats("NDVI", { maxCloud: tMaxCloud, excludeCover: tExclude, cml: tCml });
+        ndmiMap = await createAndFetchStats("NDMI", { maxCloud: tMaxCloud, excludeCover: tExclude, cml: tCml });
+      }
 
       const allDates = Array.from(new Set([...Object.keys(ndviMap), ...Object.keys(ndmiMap)])).sort();
       const series = allDates.map((d) => ({
@@ -183,7 +209,9 @@ serve(async (req) => {
       const max = ndvis.length ? Math.max(...ndvis) : 0;
 
       let growth_stage = "unknown";
-      if (last < 0.2) growth_stage = "dormancy";
+      if (series.length === 0) {
+        growth_stage = "dormancy";
+      } else if (last < 0.2) growth_stage = "dormancy";
       else if (slope > 0.02 && last > 0.3) growth_stage = "green-up";
       else if (Math.abs(last - max) <= 0.05) growth_stage = "peak";
       else if (slope < -0.02 && last < max - 0.1) growth_stage = "senescence";
@@ -199,8 +227,25 @@ serve(async (req) => {
         analysis: { health_status, growth_stage },
       };
 
+      const used_filters = {
+        max_cloud_cover_in_aoi: series.length ? (fallback_used ? Math.max(maxCloud, 60) : maxCloud) : maxCloud,
+        exclude_cover_pixels: series.length ? (fallback_used ? false : excludeCover) : excludeCover,
+        cloud_masking_level: series.length ? (fallback_used ? 1 : cml) : cml,
+      };
+      const meta = {
+        mode: "live",
+        start_date: sd,
+        end_date: ed,
+        observation_count: series.length,
+        fallback_used,
+        used_filters,
+        reason: series.length === 0 ? "no_observations" : undefined,
+      };
+
+      console.log("EOS vegetation response", { observation_count: series.length, used_filters, fallback_used });
+
       return new Response(
-        JSON.stringify({ vegetation: out, meta: { mode: "live", start_date: sd, end_date: ed } }),
+        JSON.stringify({ vegetation: out, meta }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

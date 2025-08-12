@@ -63,6 +63,9 @@ const EOSTester: React.FC = () => {
     cropType: "wheat",
     start_date: formatDate(startDefault),
     end_date: formatDate(today),
+    max_cloud_cover_in_aoi: 30,
+    exclude_cover_pixels: true,
+    cloud_masking_level: 2,
   });
 
   const [dateRange, setDateRange] = useState<{ from?: Date; to?: Date }>({
@@ -348,6 +351,15 @@ const EOSTester: React.FC = () => {
     try {
       const vegetation = await getVegetationTimeSeries(polygonData, eosConfig);
       setTestResults((p) => ({ ...p, vegetation }));
+      if (!vegetation.time_series || vegetation.time_series.length === 0) {
+        const reason = (vegetation as any).meta?.reason;
+        toast({
+          title: "Nessuna osservazione valida",
+          description: reason === "no_observations"
+            ? "Prova a ridurre l'intervallo o ad aumentare la tolleranza alle nuvole."
+            : "Prova ad aumentare la tolleranza nuvole, allargare il poligono o cambiare periodo.",
+        });
+      }
 
       const weather = await getWeatherSummary(polygonData, eosConfig);
       setTestResults((p) => ({ ...p, weather }));
@@ -613,6 +625,26 @@ const EOSTester: React.FC = () => {
                   />
                   <p className="text-xs text-muted-foreground mt-2">Seleziona un range (default: ultimi 12 mesi)</p>
                 </div>
+
+                {/* Qualità immagine / Nuvole */}
+                <div className="bg-muted rounded-xl p-6 border border-border mt-6">
+                  <h3 className="text-lg font-semibold mb-4 text-foreground">Qualità immagine</h3>
+                  <label className="flex items-center gap-3 text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={eosConfig.exclude_cover_pixels === false || (eosConfig.max_cloud_cover_in_aoi ?? 30) > 30}
+                      onChange={(e) =>
+                        setEosConfig((prev) =>
+                          e.target.checked
+                            ? { ...prev, max_cloud_cover_in_aoi: 60, exclude_cover_pixels: false, cloud_masking_level: 1 }
+                            : { ...prev, max_cloud_cover_in_aoi: 30, exclude_cover_pixels: true, cloud_masking_level: 2 }
+                        )
+                      }
+                    />
+                    <span>Più tollerante alle nuvole</span>
+                  </label>
+                  <p className="text-xs text-muted-foreground mt-2">Aumenta copertura nuvolosa max e riduce mascheramento per ottenere più osservazioni.</p>
+                </div>
               </div>
 
               <div className="bg-primary/5 rounded-xl p-6 border border-border">
@@ -744,6 +776,20 @@ const EOSTester: React.FC = () => {
                           {testResults.vegetation.analysis.growth_stage}
                         </div>
                       </div>
+
+                      {/* Meta info */}
+                      {testResults.vegetation.meta && (
+                        <div className="bg-background rounded-lg p-4 border border-border">
+                          <div className="text-sm text-muted-foreground">Osservazioni</div>
+                          <div className="font-medium text-foreground">{testResults.vegetation.meta.observation_count ?? testResults.vegetation.time_series.length}</div>
+                          {testResults.vegetation.meta.used_filters && (
+                            <div className="text-xs text-muted-foreground mt-2">
+                              Filtri: max cloud {testResults.vegetation.meta.used_filters.max_cloud_cover_in_aoi}% • mask lvl {testResults.vegetation.meta.used_filters.cloud_masking_level} • exclude cover {String(testResults.vegetation.meta.used_filters.exclude_cover_pixels)}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       <div className="bg-background rounded-lg p-4 border border-border">
                         <div className="text-sm text-muted-foreground mb-2">NDVI (ultime osservazioni)</div>
                         <div className="h-48">

@@ -15,6 +15,10 @@ export interface EosConfig {
   cropType: "wheat" | "wine" | "olive" | (string & {});
   start_date?: string;
   end_date?: string;
+  // Optional cloud filtering params (used in live mode only)
+  max_cloud_cover_in_aoi?: number; // 0-100
+  exclude_cover_pixels?: boolean;   // exclude pixels flagged as cloudy
+  cloud_masking_level?: 0 | 1 | 2;  // 0-none,1-basic,2-advanced
 }
 
 export interface VegetationPoint {
@@ -30,6 +34,19 @@ export interface VegetationData {
   analysis: {
     health_status: string;
     growth_stage: string;
+  };
+  meta?: {
+    mode?: string;
+    start_date?: string;
+    end_date?: string;
+    reason?: string;
+    observation_count?: number;
+    fallback_used?: boolean;
+    used_filters?: {
+      max_cloud_cover_in_aoi?: number;
+      exclude_cover_pixels?: boolean;
+      cloud_masking_level?: number;
+    };
   };
 }
 
@@ -140,6 +157,9 @@ export async function getVegetationTimeSeries(
       polygon: _polygon,
       start_date: config.start_date,
       end_date: config.end_date,
+      max_cloud_cover_in_aoi: config.max_cloud_cover_in_aoi,
+      exclude_cover_pixels: config.exclude_cover_pixels,
+      cloud_masking_level: config.cloud_masking_level,
     },
   });
 
@@ -152,7 +172,11 @@ export async function getVegetationTimeSeries(
     console.warn("eos-proxy vegetation invalid response", data);
     return demoVegetation();
   }
-  return data.vegetation as VegetationData;
+  const veg = data.vegetation as VegetationData;
+  if ((data as any).meta) {
+    (veg as any).meta = (data as any).meta;
+  }
+  return veg;
 }
 
 export async function getWeatherSummary(
