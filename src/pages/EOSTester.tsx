@@ -85,6 +85,7 @@ const EOSTester: React.FC = () => {
     vegetation: null,
     weather: null,
     productivity: null,
+  });
 
   const [summary, setSummary] = useState<EosSummary | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -353,6 +354,11 @@ const EOSTester: React.FC = () => {
     setCurrentStep(3);
 
     try {
+      // Avvia la richiesta di summary in parallelo (best-effort)
+      getEosSummary(polygonData, eosConfig)
+        .then((sm) => setSummary(sm))
+        .catch((e) => console.warn("eos summary error", e));
+
       const vegetation = await getVegetationTimeSeries(polygonData, eosConfig);
       setTestResults((p) => ({ ...p, vegetation }));
       if (!vegetation.time_series || vegetation.time_series.length === 0) {
