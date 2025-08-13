@@ -73,22 +73,13 @@ const GoogleMapsPolygonDrawer = forwardRef<PolygonDrawerRef, PolygonDrawerProps>
       }
     };
 
-    const setupPolygonListeners = (polygon: google.maps.Polygon) => {
-      const updatePolygonData = () => {
-        const newArea = calculatePolygonArea(polygon);
-        const coordinates = extractCoordinates(polygon);
-        setArea(newArea);
-        onPolygonChange({ coordinates, area: newArea });
-      };
 
-      polygon.getPath().addListener('set_at', updatePolygonData);
-      polygon.getPath().addListener('insert_at', updatePolygonData);
-      polygon.getPath().addListener('remove_at', updatePolygonData);
-    };
+    const onPolygonChangeRef = useRef(onPolygonChange);
+    onPolygonChangeRef.current = onPolygonChange;
 
     useEffect(() => {
       const initializeMap = async () => {
-        if (!mapRef.current) return;
+        if (!mapRef.current || mapInstanceRef.current) return; // Prevent double initialization
 
         try {
           // Wait for Google Maps to be fully loaded
@@ -110,50 +101,59 @@ const GoogleMapsPolygonDrawer = forwardRef<PolygonDrawerRef, PolygonDrawerProps>
             fullscreenControl: true,
           });
 
-        mapInstanceRef.current = map;
+          mapInstanceRef.current = map;
 
-        // Initialize drawing manager
-        const drawingManager = new google.maps.drawing.DrawingManager({
-          drawingMode: null,
-          drawingControl: true,
-          drawingControlOptions: {
-            position: google.maps.ControlPosition.TOP_CENTER,
-            drawingModes: [google.maps.drawing.OverlayType.POLYGON],
-          },
-          polygonOptions: {
-            fillColor: '#3b82f6',
-            fillOpacity: 0.3,
-            strokeWeight: 2,
-            strokeColor: '#1d4ed8',
-            clickable: true,
-            editable: true,
-            zIndex: 1,
-          },
-        });
+          // Initialize drawing manager
+          const drawingManager = new google.maps.drawing.DrawingManager({
+            drawingMode: null,
+            drawingControl: true,
+            drawingControlOptions: {
+              position: google.maps.ControlPosition.TOP_CENTER,
+              drawingModes: [google.maps.drawing.OverlayType.POLYGON],
+            },
+            polygonOptions: {
+              fillColor: '#3b82f6',
+              fillOpacity: 0.3,
+              strokeWeight: 2,
+              strokeColor: '#1d4ed8',
+              clickable: true,
+              editable: true,
+              zIndex: 1,
+            },
+          });
 
-        drawingManager.setMap(map);
-        drawingManagerRef.current = drawingManager;
+          drawingManager.setMap(map);
+          drawingManagerRef.current = drawingManager;
 
-        // Handle polygon completion
-        google.maps.event.addListener(drawingManager, 'polygoncomplete', (polygon: google.maps.Polygon) => {
-          // Clear any existing polygon
-          clearPolygon();
-          
-          // Set the new polygon
-          currentPolygonRef.current = polygon;
-          
-          // Calculate initial area and coordinates
-          const polygonArea = calculatePolygonArea(polygon);
-          const coordinates = extractCoordinates(polygon);
-          setArea(polygonArea);
-          onPolygonChange({ coordinates, area: polygonArea });
-          
-          // Setup listeners for polygon editing
-          setupPolygonListeners(polygon);
-          
-          // Disable drawing mode after polygon is created
-          drawingManager.setDrawingMode(null);
-        });
+          // Handle polygon completion
+          google.maps.event.addListener(drawingManager, 'polygoncomplete', (polygon: google.maps.Polygon) => {
+            // Clear any existing polygon
+            clearPolygon();
+            
+            // Set the new polygon
+            currentPolygonRef.current = polygon;
+            
+            // Calculate initial area and coordinates
+            const polygonArea = calculatePolygonArea(polygon);
+            const coordinates = extractCoordinates(polygon);
+            setArea(polygonArea);
+            onPolygonChangeRef.current({ coordinates, area: polygonArea });
+            
+            // Setup listeners for polygon editing with stable ref
+            const updatePolygonData = () => {
+              const newArea = calculatePolygonArea(polygon);
+              const coords = extractCoordinates(polygon);
+              setArea(newArea);
+              onPolygonChangeRef.current({ coordinates: coords, area: newArea });
+            };
+
+            polygon.getPath().addListener('set_at', updatePolygonData);
+            polygon.getPath().addListener('insert_at', updatePolygonData);
+            polygon.getPath().addListener('remove_at', updatePolygonData);
+            
+            // Disable drawing mode after polygon is created
+            drawingManager.setDrawingMode(null);
+          });
 
           setIsMapLoaded(true);
         } catch (error) {
@@ -162,7 +162,14 @@ const GoogleMapsPolygonDrawer = forwardRef<PolygonDrawerRef, PolygonDrawerProps>
       };
 
       initializeMap();
-    }, [initialCenter, initialZoom, onPolygonChange]);
+      
+      // Cleanup function
+      return () => {
+        if (currentPolygonRef.current) {
+          currentPolygonRef.current.setMap(null);
+        }
+      };
+    }, [initialCenter, initialZoom]); // Removed onPolygonChange from dependencies
 
     const startDrawing = () => {
       if (drawingManagerRef.current) {
@@ -201,7 +208,11 @@ const GoogleMapsPolygonDrawer = forwardRef<PolygonDrawerRef, PolygonDrawerProps>
           <div 
             ref={mapRef} 
             className="w-full h-[400px] rounded-lg border"
-            style={{ minHeight: '400px' }}
+            style={{ 
+              minHeight: '400px',
+              height: '400px',
+              width: '100%'
+            }}
           />
           {area && (
             <div className="mt-3 flex justify-center">

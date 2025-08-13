@@ -154,7 +154,7 @@ const EOSInput: React.FC = () => {
   }, []);
 
 
-  // Handle polygon selection from map - memoized to prevent re-renders
+  // Handle polygon selection from map - stabilized callback
   const handleMapPolygonSelect = React.useCallback((polygon: {
     type: string;
     coordinates: number[][][];
@@ -171,13 +171,11 @@ const EOSInput: React.FC = () => {
     setPolygonOptions([]);
     setInputMode("map");
     
-    // Use toast without dependency to avoid re-renders
-    const toastConfig = { 
+    toast({ 
       title: "Campo selezionato", 
       description: `Poligono di ${polygon.area.toFixed(2)} ha dalla mappa` 
-    };
-    toast(toastConfig);
-  }, []); // Empty dependency array to prevent re-renders
+    });
+  }, []);
 
   const handleFileUpload = async (file: File) => {
     try {
