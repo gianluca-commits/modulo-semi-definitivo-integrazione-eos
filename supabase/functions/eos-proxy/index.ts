@@ -152,25 +152,30 @@ serve(async (req) => {
 
         const statusUrl = `https://api-connect.eos.com/api/gdw/api/${taskId}?api_key=${apiKey}`;
         let attempts = 0;
-        while (attempts < 18) { // ~108s max
-          attempts++;
-          const st = await fetch(statusUrl);
-          if (!st.ok) {
-            const t = await st.text();
-            throw new Error(`Stats status failed: ${st.status} ${t}`);
-          }
-          const stJson = await st.json();
-          if (stJson?.result && Array.isArray(stJson.result)) {
-            const map: Record<string, number> = {};
-            for (const r of stJson.result) {
-              if (r?.date && (typeof r.average === "number" || typeof r.average === "string")) {
-                map[r.date] = Number(r.average);
+          while (attempts < 18) { // ~144s max with 8s interval
+            attempts++;
+            const st = await fetch(statusUrl);
+            if (!st.ok) {
+              const t = await st.text();
+              if (st.status === 429 || t.includes("limit")) {
+                console.error("Stats status 429 - backing off 12s");
+                await sleep(12000);
+                continue;
               }
+              throw new Error(`Stats status failed: ${st.status} ${t}`);
             }
-            return map;
+            const stJson = await st.json();
+            if (stJson?.result && Array.isArray(stJson.result)) {
+              const map: Record<string, number> = {};
+              for (const r of stJson.result) {
+                if (r?.date && (typeof r.average === "number" || typeof r.average === "string")) {
+                  map[r.date] = Number(r.average);
+                }
+              }
+              return map;
+            }
+            await sleep(8000); // slower polling to respect RPM
           }
-          await sleep(6000); // Respect 10 RPM rate limit on status endpoint
-        }
         throw new Error("Statistics task timed out");
       };
 
@@ -408,6 +413,11 @@ serve(async (req) => {
           const st = await fetch(statusUrl);
           if (!st.ok) {
             const t = await st.text();
+            if (st.status === 429 || t.includes("limit")) {
+              console.error("Summary stats status 429 - backing off 10s");
+              await sleep(10000);
+              continue;
+            }
             throw new Error(`Stats status failed: ${st.status} ${t}`);
           }
           const stJson = await st.json();
@@ -420,7 +430,7 @@ serve(async (req) => {
             }
             return map;
           }
-          await sleep(6000);
+          await sleep(8000);
         }
         throw new Error("Statistics task timed out");
       };

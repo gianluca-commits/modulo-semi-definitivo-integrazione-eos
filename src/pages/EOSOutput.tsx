@@ -3,11 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { EosSummary, computeProductivity, getEosSummary, type PolygonData, type EosConfig } from "@/lib/eos";
+import { EosSummary, computeProductivity, getEosSummary, demoVegetation, type PolygonData, type EosConfig } from "@/lib/eos";
 import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { BarChart3, ArrowLeft, ThermometerSun, Droplets, Leaf, Activity, Download } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 function setMetaTags(title: string, description: string, canonicalPath: string) {
   document.title = title;
   let meta = document.querySelector('meta[name="description"]');
@@ -42,7 +43,8 @@ const EOSOutput: React.FC = () => {
     exported_at: string;
   } | null>(null);
   const [usePermissiveFilters, setUsePermissiveFilters] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
+const [refreshKey, setRefreshKey] = useState(0);
+const [showDemo, setShowDemo] = useState(false);
 
   const eosConfig: EosConfig | null = useMemo(() => {
     if (!userCfg) return null;
@@ -80,8 +82,11 @@ const EOSOutput: React.FC = () => {
       if (last) {
         try {
           const parsed = JSON.parse(last);
-          if (parsed?.summary) {
+          const invalid = parsed?.summary?.meta?.fallback_used || (parsed?.summary?.meta?.observation_count === 0);
+          if (parsed?.summary && !invalid) {
             setSavedBundle(parsed);
+          } else {
+            localStorage.removeItem("eos_last_summary");
           }
         } catch {}
       }
@@ -98,12 +103,17 @@ const EOSOutput: React.FC = () => {
         const sumRes = await getEosSummary(polygon, eosConfig);
         setSummary(sumRes);
         setUsingSaved(false);
-        // Persist last successful result for offline/fallback exports
+        setShowDemo(false);
+        // Persist last successful result for offline/fallback exports (only real observations, no fallback)
         try {
-          localStorage.setItem(
-            "eos_last_summary",
-            JSON.stringify({ polygon, userCfg, summary: sumRes, exported_at: new Date().toISOString() })
-          );
+          const obsCount = sumRes?.meta?.observation_count ?? 0;
+          const usedFallback = Boolean(sumRes?.meta?.fallback_used);
+          if (obsCount > 0 && !usedFallback) {
+            localStorage.setItem(
+              "eos_last_summary",
+              JSON.stringify({ polygon, userCfg, summary: sumRes, exported_at: new Date().toISOString() })
+            );
+          }
         } catch {}
         toast({ title: "Analisi completata", description: "Dati aggiornati con successo." });
       } catch (e: any) {
@@ -125,8 +135,11 @@ const EOSOutput: React.FC = () => {
 
   if (!polygon || !userCfg) return null;
 
-  const ts = (summary?.ndvi_series as any) || [];
-  const noObs = (!ts.length) || (summary?.meta?.observation_count === 0);
+const rawTs = (summary?.ndvi_series as any) || [];
+const demoTs = useMemo(() => demoVegetation().time_series, []);
+const noRealObs = (!rawTs.length) || (summary?.meta?.observation_count === 0);
+const isDemo = showDemo || noRealObs;
+const ts = isDemo && showDemo ? demoTs : rawTs;
 
   const fileSafe = (s: string) => (s || "").replace(/[^a-z0-9-_]+/gi, "_").toLowerCase();
 
@@ -139,6 +152,7 @@ const EOSOutput: React.FC = () => {
       polygon,
       userCfg,
       summary,
+      demo: isDemo,
       exported_at: new Date().toISOString(),
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
@@ -150,8 +164,8 @@ const EOSOutput: React.FC = () => {
   };
 
   const handleExportCSV = () => {
-    if (!ts.length) {
-      toast({ title: "Serie NDVI vuota", description: "Nessun dato da esportare.", variant: "destructive" });
+    if (!ts.length || isDemo) {
+      toast({ title: "Esportazione disabilitata", description: "CSV NDVI non disponibile per dati di esempio.", variant: "destructive" });
       return;
     }
     const rows = [["date", "NDVI", "NDMI"], ...ts.map((p: any) => [p.date, p.NDVI, p.NDMI])];
@@ -185,9 +199,9 @@ const EOSOutput: React.FC = () => {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => handlePrint()}>PDF (stampa)</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handlePrint()} disabled={isDemo}>PDF (stampa)</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => handleExportJSON()}>JSON</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleExportCSV()} disabled={!ts.length}>CSV NDVI</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExportCSV()} disabled={!ts.length || isDemo}>CSV NDVI</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
             <Button variant="secondary" onClick={() => navigate("/")}>Nuova analisi</Button>
@@ -196,7 +210,7 @@ const EOSOutput: React.FC = () => {
       </header>
 
       <section className="max-w-6xl mx-auto px-4 py-6 grid lg:grid-cols-3 gap-6">
-        {(usingSaved || noObs) && (
+        {(usingSaved || noRealObs) && (
           <div className="lg:col-span-3">
             <Alert variant={usingSaved ? "default" : "destructive"}>
               <AlertTitle>{usingSaved ? "Stai visualizzando l'ultimo risultato salvato" : "Nessun risultato trovato nel periodo"}</AlertTitle>
@@ -206,8 +220,8 @@ const EOSOutput: React.FC = () => {
                   : "Prova ad allargare l'intervallo o a usare filtri più permissivi."}
               </AlertDescription>
               <div className="mt-3 flex gap-2">
-                <Button size="sm" variant="secondary" onClick={() => { setUsePermissiveFilters(false); setRefreshKey((k) => k + 1); }}>Riprova</Button>
-                <Button size="sm" onClick={() => { setUsePermissiveFilters(true); setRefreshKey((k) => k + 1); }}>Riprova con filtri estesi</Button>
+                <Button size="sm" variant="secondary" onClick={() => { setUsePermissiveFilters(false); setShowDemo(false); setRefreshKey((k) => k + 1); }}>Riprova</Button>
+                <Button size="sm" onClick={() => { setUsePermissiveFilters(true); setShowDemo(false); setRefreshKey((k) => k + 1); }}>Riprova con filtri estesi</Button>
               </div>
             </Alert>
           </div>
@@ -229,7 +243,7 @@ const EOSOutput: React.FC = () => {
           <div className="grid md:grid-cols-2 gap-4">
             <Card className="border border-border">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-foreground"><Leaf className="w-4 h-4" /> NDVI</CardTitle>
+                <CardTitle className="flex items-center gap-2 text-foreground"><Leaf className="w-4 h-4" /> NDVI {isDemo && (<Badge variant="secondary" className="ml-2">Dati di esempio</Badge>)}</CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="text-2xl font-bold text-foreground">{summary?.ndvi_data.current_value != null ? summary.ndvi_data.current_value.toLocaleString('it-IT', { maximumFractionDigits: 2 }) : "-"}</p>
@@ -268,7 +282,7 @@ const EOSOutput: React.FC = () => {
           {/* Chart */}
           <Card className="border border-border">
             <CardHeader>
-              <CardTitle className="text-foreground">Andamento NDVI</CardTitle>
+              <CardTitle className="text-foreground">Andamento NDVI {isDemo && (<Badge variant="secondary" className="ml-2">Dati di esempio</Badge>)}</CardTitle>
             </CardHeader>
             <CardContent className="h-64">
               {ts.length ? (
@@ -282,7 +296,10 @@ const EOSOutput: React.FC = () => {
                   </LineChart>
                 </ResponsiveContainer>
               ) : (
-                <p className="text-sm text-muted-foreground">Nessun dato NDVI disponibile nel periodo selezionato.</p>
+                <div className="text-sm text-muted-foreground space-y-2">
+                  <p>Nessun dato NDVI disponibile nel periodo selezionato.</p>
+                  <Button size="sm" variant="secondary" onClick={() => setShowDemo(true)}>Mostra dati di esempio</Button>
+                </div>
               )}
             </CardContent>
           </Card>

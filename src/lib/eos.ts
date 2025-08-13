@@ -167,12 +167,24 @@ export async function getVegetationTimeSeries(
 
   if (error) {
     console.error("eos-proxy vegetation error:", error);
-    // Fallback to demo to keep UX smooth
-    return demoVegetation();
+    // Return empty result instead of demo
+    return {
+      field_id: "UNKNOWN",
+      satellite: "",
+      time_series: [],
+      analysis: { health_status: "unknown", growth_stage: "unknown" },
+      meta: { reason: "error", observation_count: 0, fallback_used: false },
+    };
   }
   if (!data || !("vegetation" in data)) {
     console.warn("eos-proxy vegetation invalid response", data);
-    return demoVegetation();
+    return {
+      field_id: "UNKNOWN",
+      satellite: "",
+      time_series: [],
+      analysis: { health_status: "unknown", growth_stage: "unknown" },
+      meta: { reason: "invalid_response", observation_count: 0, fallback_used: false },
+    };
   }
   const veg = data.vegetation as VegetationData;
   if ((data as any).meta) {
@@ -202,11 +214,11 @@ export async function getWeatherSummary(
 
   if (error) {
     console.error("eos-proxy weather error:", error);
-    return demoWeather();
+    return { temperature_avg: 0, precipitation_total: 0, alerts: [] };
   }
   if (!data || !("weather" in data)) {
     console.warn("eos-proxy weather invalid response", data);
-    return demoWeather();
+    return { temperature_avg: 0, precipitation_total: 0, alerts: [] };
   }
 
   return data.weather as WeatherData;
@@ -352,7 +364,13 @@ export async function getEosSummary(
     console.error("eos-proxy summary error:", error);
     break;
   }
-  // Fallback to demo to keep UX smooth
-  return await getEosSummary(_polygon, { ...config, apiKey: "demo" });
+  return {
+    ndvi_data: {},
+    ndmi_data: { critical_threshold: 0.3 },
+    phenology: {},
+    weather_risks: {},
+    ndvi_series: [],
+    meta: { observation_count: 0, fallback_used: false, start_date: config.start_date, end_date: config.end_date },
+  };
 }
 
