@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
-import { MapContainer, TileLayer, FeatureGroup } from 'react-leaflet';
+import { MapContainer, TileLayer, FeatureGroup, useMap } from 'react-leaflet';
 import L, { LatLng } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet-draw/dist/leaflet.draw.css';
@@ -115,14 +115,25 @@ const LeafletPolygonDrawer = forwardRef<PolygonDrawerRef, PolygonDrawerProps>(
       }
     };
 
-    // Add drawing controls to the map
-    useLeafletDraw({
-      map: mapRef.current,
-      featureGroup: featureGroupRef.current,
-      onCreated: handleCreated,
-      onEdited: handleEdited,
-      onDeleted: handleDeleted
-    });
+    // MapController component to initialize map references and drawing controls
+    const MapController = () => {
+      const map = useMap();
+      
+      useEffect(() => {
+        mapRef.current = map;
+      }, [map]);
+
+      // Add drawing controls to the map
+      useLeafletDraw({
+        map: map,
+        featureGroup: featureGroupRef.current,
+        onCreated: handleCreated,
+        onEdited: handleEdited,
+        onDeleted: handleDeleted
+      });
+
+      return null;
+    };
 
     useImperativeHandle(ref, () => ({
       flyToLocation: (center: [number, number], bbox?: [number, number, number, number]) => {
@@ -169,15 +180,19 @@ const LeafletPolygonDrawer = forwardRef<PolygonDrawerRef, PolygonDrawerProps>(
               center={[initialCenter[1], initialCenter[0]]}
               zoom={initialZoom}
               style={{ height: '100%', width: '100%' }}
-              ref={mapRef}
             >
               <TileLayer
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               />
-              <FeatureGroup ref={featureGroupRef}>
+              <FeatureGroup
+                ref={(ref) => {
+                  featureGroupRef.current = ref;
+                }}
+              >
                 {/* Drawing controls will be added programmatically */}
               </FeatureGroup>
+              <MapController />
             </MapContainer>
           </div>
 
