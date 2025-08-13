@@ -7,12 +7,12 @@ import { calculateAreaHa, type PolygonData } from "@/lib/eos";
 import { kml as kmlToGeoJSON } from "@tmcw/togeojson";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Calendar as CalendarIcon, Upload, MapPin, Settings, ArrowRight, AlertTriangle, Loader2 } from "lucide-react";
+import { Calendar as CalendarIcon, Upload, MapPin, Settings, ArrowRight, AlertTriangle, Loader2, AlertCircle, Map } from "lucide-react";
 import { MapSelector } from "@/components/MapSelector";
-
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 
 // Top 10 colture in Italia (indicative)
@@ -83,6 +83,8 @@ const EOSInput: React.FC = () => {
   // Mapbox token state
   const [mapboxToken, setMapboxToken] = useState<string>("");
   const [isLoadingToken, setIsLoadingToken] = useState(true);
+  const [manualToken, setManualToken] = useState<string>("");
+  const [tokenError, setTokenError] = useState<string>("");
 
   // Fetch Mapbox token on component mount
   useEffect(() => {
@@ -95,40 +97,25 @@ const EOSInput: React.FC = () => {
         
         if (error) {
           console.error('Supabase function error:', error);
-          toast({
-            title: "Errore configurazione mappa",
-            description: `Errore: ${error.message || 'Impossibile caricare la configurazione della mappa'}`,
-            variant: "destructive"
-          });
+          setTokenError(`Errore configurazione: ${error.message || 'Impossibile caricare il token'}`);
         } else if (data?.mapboxToken) {
           console.log('Mapbox token received successfully');
           setMapboxToken(data.mapboxToken);
-          toast({
-            title: "Mappa configurata",
-            description: "Configurazione mappa caricata con successo",
-          });
+          setTokenError("");
         } else {
           console.warn('No mapbox token in response:', data);
-          toast({
-            title: "Token Mapbox mancante",
-            description: "Il token Mapbox non è stato configurato correttamente",
-            variant: "destructive"
-          });
+          setTokenError("Token Mapbox non configurato nei secrets di Supabase");
         }
       } catch (error) {
         console.error('Error calling mapbox-config function:', error);
-        toast({
-          title: "Errore di rete",
-          description: `Errore di connessione: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`,
-          variant: "destructive"
-        });
+        setTokenError(`Errore di rete: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`);
       } finally {
         setIsLoadingToken(false);
       }
     };
 
     fetchMapboxToken();
-  }, [toast]);
+  }, []);
 
   // Intelligent date range calculation
   const intelligentDateRange = useMemo(() => {
@@ -336,19 +323,146 @@ const EOSInput: React.FC = () => {
         {/* Campo Selection */}
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
-            {isLoadingToken ? (
-              <Card className="h-96 flex items-center justify-center">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  <span>Caricamento mappa...</span>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold">Selezione Campo</h3>
+                <div className="flex space-x-2">
+                  <Button
+                    variant={inputMode === "map" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setInputMode("map")}
+                  >
+                    <Map className="h-4 w-4 mr-2" />
+                    Mappa
+                  </Button>
+                  <Button
+                    variant={inputMode === "file" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setInputMode("file")}
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    File
+                  </Button>
                 </div>
-              </Card>
-            ) : (
-              <MapSelector 
-                onPolygonSelect={handleMapPolygonSelect}
-                mapboxToken={mapboxToken}
-              />
-            )}
+              </div>
+
+              {inputMode === "map" && (
+                <>
+                  {isLoadingToken && (
+                    <Card>
+                      <CardContent className="p-6">
+                        <div className="flex items-center space-x-2">
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                          <span>Caricamento configurazione mappa...</span>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                  
+                  {!isLoadingToken && tokenError && !mapboxToken && !manualToken && (
+                    <Card>
+                      <CardContent className="p-6 space-y-4">
+                        <Alert variant="destructive">
+                          <AlertCircle className="h-4 w-4" />
+                          <AlertDescription>
+                            {tokenError}
+                          </AlertDescription>
+                        </Alert>
+                        
+                        <div className="space-y-2">
+                          <Label htmlFor="manual-token">Inserisci token Mapbox manualmente (opzionale)</Label>
+                          <div className="flex space-x-2">
+                            <Input
+                              id="manual-token"
+                              placeholder="pk.eyJ1..."
+                              value={manualToken}
+                              onChange={(e) => setManualToken(e.target.value)}
+                              className="flex-1"
+                            />
+                            <Button
+                              onClick={() => setMapboxToken(manualToken)}
+                              disabled={!manualToken.startsWith('pk.')}
+                            >
+                              Usa Token
+                            </Button>
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            Ottieni un token gratuito su{' '}
+                            <a href="https://mapbox.com/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                              mapbox.com
+                            </a>
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                  
+                  {!isLoadingToken && (mapboxToken || manualToken) && (
+                    <MapSelector
+                      onPolygonSelect={handleMapPolygonSelect}
+                      mapboxToken={mapboxToken || manualToken}
+                    />
+                  )}
+                </>
+              )}
+
+              {inputMode === "file" && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Carica File</CardTitle>
+                    <CardDescription>
+                      Carica un file KML o GeoJSON del tuo campo
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <label className="inline-flex items-center gap-2 cursor-pointer text-foreground">
+                      <Upload className="w-4 h-4" />
+                      <span className="text-sm">Carica KML / GeoJSON</span>
+                      <input
+                        type="file"
+                        accept=".kml,.geojson,.json,application/json,application/vnd.google-earth.kml+xml"
+                        className="hidden"
+                        onChange={(e) => e.target.files && e.target.files[0] && handleFileUpload(e.target.files[0])}
+                      />
+                    </label>
+
+                    {polygonOptions.length > 1 && (
+                      <Accordion type="single" collapsible>
+                        <AccordionItem value="options">
+                          <AccordionTrigger className="text-sm">
+                            Più poligoni trovati ({polygonOptions.length})
+                          </AccordionTrigger>
+                          <AccordionContent>
+                            <div className="space-y-2">
+                              {polygonOptions.map((opt) => (
+                                <Button 
+                                  key={opt.id} 
+                                  variant="ghost" 
+                                  size="sm"
+                                  className="w-full text-left justify-start"
+                                  onClick={() => {
+                                    setPolygonData({ 
+                                      geojson: JSON.stringify({ type: "Polygon", coordinates: [opt.coordinates] }, null, 2), 
+                                      coordinates: opt.coordinates as any, 
+                                      source: polygonData.source || "File", 
+                                      area_ha: opt.area_ha 
+                                    });
+                                    
+                                    setInputMode("file");
+                                  }}
+                                >
+                                  {opt.label} • {opt.area_ha.toFixed(2)} ha
+                                </Button>
+                              ))}
+                            </div>
+                          </AccordionContent>
+                        </AccordionItem>
+                      </Accordion>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
           </div>
 
           <div className="space-y-6">
@@ -373,61 +487,6 @@ const EOSInput: React.FC = () => {
               </Card>
             )}
 
-            {/* Alternative: File Upload */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Alternativa: Carica File</CardTitle>
-                <CardDescription>
-                  Se hai già un file KML o GeoJSON del tuo campo
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <label className="inline-flex items-center gap-2 cursor-pointer text-foreground">
-                  <Upload className="w-4 h-4" />
-                  <span className="text-sm">Carica KML / GeoJSON</span>
-                  <input
-                    type="file"
-                    accept=".kml,.geojson,.json,application/json,application/vnd.google-earth.kml+xml"
-                    className="hidden"
-                    onChange={(e) => e.target.files && e.target.files[0] && handleFileUpload(e.target.files[0])}
-                  />
-                </label>
-
-                {polygonOptions.length > 1 && (
-                  <Accordion type="single" collapsible>
-                    <AccordionItem value="options">
-                      <AccordionTrigger className="text-sm">
-                        Più poligoni trovati ({polygonOptions.length})
-                      </AccordionTrigger>
-                      <AccordionContent>
-                        <div className="space-y-2">
-                          {polygonOptions.map((opt) => (
-                            <Button 
-                              key={opt.id} 
-                              variant="ghost" 
-                              size="sm"
-                              className="w-full text-left justify-start"
-                              onClick={() => {
-                                setPolygonData({ 
-                                  geojson: JSON.stringify({ type: "Polygon", coordinates: [opt.coordinates] }, null, 2), 
-                                  coordinates: opt.coordinates as any, 
-                                  source: polygonData.source || "File", 
-                                  area_ha: opt.area_ha 
-                                });
-                                
-                                setInputMode("file");
-                              }}
-                            >
-                              {opt.label} • {opt.area_ha.toFixed(2)} ha
-                            </Button>
-                          ))}
-                        </div>
-                      </AccordionContent>
-                    </AccordionItem>
-                  </Accordion>
-                )}
-              </CardContent>
-            </Card>
           </div>
         </div>
 

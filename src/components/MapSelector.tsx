@@ -70,7 +70,7 @@ export const MapSelector: React.FC<MapSelectorProps> = ({
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              Per utilizzare la mappa interattiva è necessario configurare un token Mapbox.
+              Token Mapbox non disponibile. Usa l'opzione "File" per caricare un file KML/GeoJSON invece.
               <br />
               <Button variant="link" className="h-auto p-0 text-sm" asChild>
                 <a href="https://docs.mapbox.com/help/how-mapbox-works/access-tokens/" target="_blank" rel="noopener noreferrer">
