@@ -132,11 +132,11 @@ const [showDemo, setShowDemo] = useState(false);
   }, [polygon, eosConfig, refreshKey, savedBundle, userCfg]);
 
   const productivity = useMemo(() => computeProductivity(userCfg?.cropType || "sunflower"), [userCfg?.cropType]);
+  const demoTs = useMemo(() => demoVegetation().time_series, []);
 
   if (!polygon || !userCfg) return null;
 
 const rawTs = (summary?.ndvi_series as any) || [];
-const demoTs = useMemo(() => demoVegetation().time_series, []);
 const noRealObs = (!rawTs.length) || (summary?.meta?.observation_count === 0);
 const isDemo = showDemo || noRealObs;
 const ts = isDemo && showDemo ? demoTs : rawTs;
