@@ -639,6 +639,19 @@ serve(async (req) => {
       };
 
       console.log("EOS summary response", { obs: series.length, fallback_used });
+      
+      // Enhanced logging and response for troubleshooting
+      if (series.length === 0) {
+        console.log(`EOS Debug - No observations found. Field: ${JSON.stringify(polygon.coordinates[0].slice(0, 3))}...`);
+        console.log(`EOS Debug - Period: ${sd} to ${ed}, Area: ${polygon.area_ha || 'unknown'} ha`);
+        response.meta.suggestions = [
+          "Try extending the analysis period (e.g., last 3-6 months)",
+          "Use 'Retry with extended filters' to reduce cloud filtering",
+          "Verify the field coordinates are correct",
+          "Consider that some areas may have limited satellite coverage"
+        ];
+      }
+      
       return new Response(JSON.stringify(response), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EosSummary, computeProductivity, getEosSummary, demoVegetation, type PolygonData, type EosConfig } from "@/lib/eos";
 import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { BarChart3, ArrowLeft, ThermometerSun, Droplets, Leaf, Activity, Download } from "lucide-react";
+import { BarChart3, ArrowLeft, ThermometerSun, Droplets, Leaf, Activity, Download, AlertCircle } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -272,6 +272,32 @@ const ts = isDemo && showDemo ? demoTs : rawTs;
               <Button size="sm" variant="secondary" onClick={() => { setUsePermissiveFilters(false); setShowDemo(false); setRefreshKey((k) => k + 1); }}>Riprova</Button>
               <Button size="sm" onClick={() => { setUsePermissiveFilters(true); setShowDemo(false); setRefreshKey((k) => k + 1); }}>Riprova con filtri estesi</Button>
             </div>
+          </Alert>
+        )}
+
+        {summary?.meta?.observation_count === 0 && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Nessuna Osservazione Trovata</AlertTitle>
+            <AlertDescription className="space-y-2">
+              <p>Non sono state trovate osservazioni satellitari per questo campo nel periodo analizzato.</p>
+              <div className="mt-2">
+                <p className="font-medium">Soluzioni suggerite:</p>
+                <ul className="list-disc list-inside text-sm mt-1 space-y-1">
+                  <li>Estendi il periodo di analisi (es. ultimi 3-6 mesi)</li>
+                  <li>Usa "Riprova con filtri estesi" per ridurre i filtri cloud</li>
+                  <li>Verifica che le coordinate del campo siano corrette</li>
+                </ul>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { setUsePermissiveFilters(true); setShowDemo(false); setRefreshKey((k) => k + 1); }}
+                className="mt-2"
+              >
+                Riprova con Filtri Estesi
+              </Button>
+            </AlertDescription>
           </Alert>
         )}
 

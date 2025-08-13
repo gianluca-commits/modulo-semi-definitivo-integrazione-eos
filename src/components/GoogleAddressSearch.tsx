@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Search, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { googleMapsLoader } from '@/lib/googleMapsLoader';
 
 interface GoogleAddressSearchProps {
   onLocationSelect: (center: [number, number], bbox?: [number, number, number, number]) => void;
@@ -23,28 +24,42 @@ export const GoogleAddressSearch: React.FC<GoogleAddressSearchProps> = ({
   const isSelectingRef = useRef(false);
 
   useEffect(() => {
-    const initializeServices = () => {
-      if (!window.google?.maps?.places) return;
+    const initializeServices = async () => {
+      try {
+        console.log('GoogleAddressSearch: Starting Google Maps initialization...');
+        
+        // Use the new googleMapsLoader to ensure consistent loading
+        await googleMapsLoader.load();
+        
+        if (!window.google?.maps?.places) {
+          console.error('GoogleAddressSearch: Places library not available after loading');
+          toast({
+            title: "Errore",
+            description: "Impossibile caricare i servizi di ricerca indirizzi",
+            variant: "destructive",
+          });
+          return;
+        }
 
-      autocompleteServiceRef.current = new google.maps.places.AutocompleteService();
-      
-      // Create a dummy map element for PlacesService (required by API)
-      const dummyMap = new google.maps.Map(document.createElement('div'));
-      placesServiceRef.current = new google.maps.places.PlacesService(dummyMap);
+        console.log('GoogleAddressSearch: Initializing Places services...');
+        autocompleteServiceRef.current = new google.maps.places.AutocompleteService();
+        
+        // Create a dummy map element for PlacesService (required by API)
+        const dummyMap = new google.maps.Map(document.createElement('div'));
+        placesServiceRef.current = new google.maps.places.PlacesService(dummyMap);
+        
+        console.log('GoogleAddressSearch: Services initialized successfully');
+      } catch (error) {
+        console.error('GoogleAddressSearch: Failed to initialize:', error);
+        toast({
+          title: "Errore",
+          description: "Errore nell'inizializzazione della ricerca indirizzi",
+          variant: "destructive",
+        });
+      }
     };
 
-    if (window.google?.maps?.places) {
-      initializeServices();
-    } else {
-      const checkGoogleMaps = setInterval(() => {
-        if (window.google?.maps?.places) {
-          clearInterval(checkGoogleMaps);
-          initializeServices();
-        }
-      }, 100);
-
-      return () => clearInterval(checkGoogleMaps);
-    }
+    initializeServices();
   }, []);
 
   const searchAddresses = async (searchQuery: string) => {
