@@ -338,106 +338,33 @@ export const PolygonDrawer = React.forwardRef<
             </div>
           </Card>
 
-          {/* Control buttons - always show */}
+          {/* Simplified control buttons */}
           <Card className="p-3 bg-background/95 backdrop-blur-sm">
-            <div className="flex flex-wrap gap-2">
-              {!hasPolygon && (
+            <div className="flex gap-2">
+              {!hasPolygon ? (
                 <Button
                   size="sm"
                   onClick={startNewPolygon}
-                  className="text-xs"
+                  className="text-sm"
                 >
-                  <Plus className="h-3 w-3 mr-1" />
+                  <Plus className="w-4 h-4 mr-2" />
                   Inizia a disegnare
                 </Button>
-              )}
-
-              {hasPolygon && drawingMode !== 'direct_select' && (
+              ) : (
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={enterEditMode}
-                  className="text-xs"
+                  onClick={clearPolygon}
+                  className="text-sm"
                 >
-                  <Edit3 className="h-3 w-3 mr-1" />
-                  Modifica
-                </Button>
-              )}
-              
-              {drawingMode === 'direct_select' && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={exitEditMode}
-                  className="text-xs"
-                >
-                  <Hand className="h-3 w-3 mr-1" />
-                  Esci da modifica
-                </Button>
-              )}
-
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={startNewPolygon}
-                className="text-xs"
-              >
-                <Plus className="h-3 w-3 mr-1" />
-                Nuovo campo
-              </Button>
-
-              {drawingMode === 'draw_polygon' && pointCount > 0 && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={undoLastPoint}
-                  className="text-xs"
-                  disabled
-                >
-                  <Undo2 className="h-3 w-3 mr-1" />
-                  Annulla
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Ricomincia
                 </Button>
               )}
             </div>
           </Card>
         </div>
 
-        {/* Status bar */}
-        <div className="absolute bottom-4 left-4 right-4 z-10">
-          <div className="flex items-center justify-between gap-2">
-            {/* Area display */}
-            {area !== null && (
-              <Badge variant={isValidPolygon ? "default" : "destructive"} className="text-sm">
-                Area: {area.toFixed(2)} ha
-                {!isValidPolygon && validationError && (
-                  <span className="ml-2">• {validationError}</span>
-                )}
-              </Badge>
-            )}
-
-            {/* Drawing mode indicator */}
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-xs">
-                {drawingMode === 'draw_polygon' && 'Disegno'}
-                {drawingMode === 'direct_select' && 'Modifica'}
-                {drawingMode === 'simple_select' && 'Seleziona'}
-              </Badge>
-
-              {/* Clear button */}
-              {hasPolygon && (
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={clearPolygon}
-                  className="shadow-lg"
-                >
-                  <Trash2 className="h-4 w-4 mr-1" />
-                  Cancella
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
       </Card>
 
       {!mapboxToken && (
