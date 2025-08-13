@@ -308,6 +308,41 @@ const EOSInput: React.FC = () => {
     navigate("/output");
   };
 
+  // Debug rendering
+  console.log('EOSInput render:', { 
+    isLoadingToken, 
+    tokenError, 
+    mapboxToken: mapboxToken ? 'present' : 'missing',
+    inputMode,
+    polygonData: polygonData.geojson ? 'present' : 'missing'
+  });
+
+  // Test render - simple fallback to see if page loads
+  if (isLoadingToken && !mapboxToken) {
+    return (
+      <main className="min-h-screen bg-background">
+        <header className="border-b border-border bg-card">
+          <div className="max-w-6xl mx-auto px-4 py-6 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <MapPin className="w-6 h-6 text-foreground" />
+              <h1 className="text-2xl font-bold text-foreground">Analisi Campo - Input</h1>
+            </div>
+          </div>
+        </header>
+        <section className="max-w-6xl mx-auto px-4 py-8">
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center space-x-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Caricamento configurazione mappa...</span>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
