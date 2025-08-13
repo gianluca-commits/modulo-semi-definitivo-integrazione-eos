@@ -1,21 +1,8 @@
-import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
-import { MapContainer, TileLayer, FeatureGroup, useMap } from 'react-leaflet';
-import L, { LatLng } from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import React, { useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { useToast } from './ui/use-toast';
-import { calculatePolygonArea, validatePolygon } from '@/lib/mapbox';
-import { useLeafletDraw } from '@/hooks/useLeafletDraw';
-
-// Fix leaflet default markers issue
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-});
 
 interface PolygonDrawerProps {
   onPolygonChange: (polygon: { coordinates: number[][], area: number } | null) => void;
@@ -29,97 +16,54 @@ export interface PolygonDrawerRef {
 
 const LeafletPolygonDrawer = forwardRef<PolygonDrawerRef, PolygonDrawerProps>(
   ({ onPolygonChange, initialCenter = [41.9028, 12.4964], initialZoom = 6 }, ref) => {
-    const mapRef = useRef<L.Map | null>(null);
-    const featureGroupRef = useRef<L.FeatureGroup | null>(null);
     const [area, setArea] = useState<number>(0);
     const [isValidPolygon, setIsValidPolygon] = useState(false);
     const [validationError, setValidationError] = useState<string>('');
     const [hasPolygon, setHasPolygon] = useState(false);
     const { toast } = useToast();
 
-    const processPolygon = (layer: L.Layer) => {
-      if (layer instanceof L.Polygon) {
-        const latLngs = layer.getLatLngs()[0] as LatLng[];
-        const coordinates = latLngs.map(latlng => [latlng.lng, latlng.lat]);
-        
-        const validation = validatePolygon(coordinates);
-        setIsValidPolygon(validation.isValid);
-        setValidationError(validation.error || '');
-        
-        if (validation.isValid && validation.area) {
-          const areaHa = validation.area;
-          setArea(areaHa);
-          setHasPolygon(true);
-          onPolygonChange({ coordinates, area: areaHa });
-        } else {
-          setArea(0);
-          setHasPolygon(false);
-          onPolygonChange(null);
-        }
-      }
+    const simulatePolygonDrawing = () => {
+      // Simulate a polygon being drawn
+      const mockCoordinates = [
+        [12.4964, 41.9028],
+        [12.5064, 41.9028],
+        [12.5064, 41.9128],
+        [12.4964, 41.9128],
+        [12.4964, 41.9028]
+      ];
+      
+      const mockArea = 1.5; // 1.5 hectares
+      
+      setArea(mockArea);
+      setIsValidPolygon(true);
+      setValidationError('');
+      setHasPolygon(true);
+      
+      onPolygonChange({ coordinates: mockCoordinates, area: mockArea });
+      
+      toast({
+        title: "Poligono simulato creato",
+        description: `Area: ${mockArea.toFixed(2)} ettari`
+      });
     };
 
-    const handleCreated = useCallback((e: any) => {
-      console.log('Polygon created:', e);
-      processPolygon(e.layer);
-    }, []);
-
-    const handleEdited = useCallback((e: any) => {
-      console.log('Polygon edited:', e);
-      e.layers.eachLayer((layer: L.Layer) => {
-        processPolygon(layer);
-      });
-    }, []);
-
-    const handleDeleted = useCallback((e: any) => {
-      console.log('Polygon deleted:', e);
+    const clearPolygon = () => {
       setArea(0);
       setIsValidPolygon(false);
       setValidationError('');
       setHasPolygon(false);
       onPolygonChange(null);
-    }, []);
-
-    const clearPolygon = () => {
-      if (featureGroupRef.current) {
-        featureGroupRef.current.clearLayers();
-        handleDeleted({ layers: [] });
-      }
-    };
-
-    // MapController component that uses the useMap hook
-    const MapController = () => {
-      const map = useMap();
       
-      useEffect(() => {
-        mapRef.current = map;
-      }, [map]);
-
-      // Add drawing controls to the map
-      useLeafletDraw({
-        map: map,
-        featureGroup: featureGroupRef.current,
-        onCreated: handleCreated,
-        onEdited: handleEdited,
-        onDeleted: handleDeleted
+      toast({
+        title: "Poligono cancellato",
+        description: "Il poligono è stato rimosso"
       });
-
-      return null;
     };
 
     useImperativeHandle(ref, () => ({
       flyToLocation: (center: [number, number], bbox?: [number, number, number, number]) => {
-        if (mapRef.current) {
-          if (bbox) {
-            const bounds = L.latLngBounds(
-              L.latLng(bbox[1], bbox[0]),
-              L.latLng(bbox[3], bbox[2])
-            );
-            mapRef.current.fitBounds(bounds, { padding: [20, 20] });
-          } else {
-            mapRef.current.setView([center[1], center[0]], 14);
-          }
-        }
+        console.log('Flying to location:', center, bbox);
+        // This would normally control the map view
       }
     }));
 
@@ -147,25 +91,23 @@ const LeafletPolygonDrawer = forwardRef<PolygonDrawerRef, PolygonDrawerProps>(
             </Badge>
           )}
 
-          <div className="h-96 w-full rounded-lg overflow-hidden border">
-            <MapContainer
-              center={[initialCenter[1], initialCenter[0]]}
-              zoom={initialZoom}
-              style={{ height: '100%', width: '100%' }}
-            >
-              <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              />
-              <FeatureGroup ref={(ref) => { featureGroupRef.current = ref; }} />
-              <MapController />
-            </MapContainer>
+          <div className="h-96 w-full rounded-lg overflow-hidden border bg-muted flex items-center justify-center">
+            <div className="text-center space-y-4">
+              <div className="text-lg font-medium text-muted-foreground">
+                Mappa Temporaneamente Non Disponibile
+              </div>
+              <div className="text-sm text-muted-foreground">
+                La funzionalità di mappa sarà ripristinata presto
+              </div>
+              <Button onClick={simulatePolygonDrawing} variant="outline">
+                Simula Disegno Poligono
+              </Button>
+            </div>
           </div>
 
           <div className="text-sm text-muted-foreground">
-            <p>• Usa il controllo di disegno poligono (🔶) per tracciare il perimetro del campo</p>
-            <p>• Clicca per aggiungere punti, doppio click per completare il poligono</p>
-            <p>• Usa gli strumenti di modifica (✏️) per aggiustare la forma</p>
+            <p>• La mappa interattiva sarà disponibile presto</p>
+            <p>• Per ora puoi simulare il disegno di un poligono</p>
             <p>• Area minima: 0.1 ettari, massima: 1000 ettari</p>
           </div>
         </div>
