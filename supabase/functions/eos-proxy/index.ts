@@ -612,6 +612,8 @@ serve(async (req) => {
           frost_risk_forecast_7d,
           heat_stress_risk,
         },
+        // Include series so the UI can render the NDVI chart without extra calls
+        ndvi_series: series,
         meta: {
           start_date: sd,
           end_date: ed,

@@ -246,6 +246,8 @@ export interface EosSummary {
     frost_risk_forecast_7d?: boolean;
     heat_stress_risk?: "low" | "medium" | "high";
   };
+  // Optional NDVI/NDMI time series for charting without extra calls
+  ndvi_series?: VegetationPoint[];
   meta?: {
     start_date?: string;
     end_date?: string;
@@ -303,7 +305,7 @@ export async function getEosSummary(
 
     // Days from planting
     const planting = config.planting_date ? new Date(config.planting_date) : undefined;
-    const ref = last?.date ? new Date(last.date) : new Date();
+    const ref = config.end_date ? new Date(config.end_date) : new Date();
     const days_from_planting = planting ? Math.max(0, Math.floor((+ref - +planting) / 86400000)) : undefined;
 
     return {
@@ -311,29 +313,46 @@ export async function getEosSummary(
       ndmi_data: { current_value: ndmi_now, water_stress_level: water_stress, trend_14_days: ndmi_trend, critical_threshold: 0.3 },
       phenology: { current_stage: veg.analysis.growth_stage, days_from_planting, expected_harvest_days: 200, development_rate: "normal" },
       weather_risks: { temperature_stress_days: undefined, precipitation_deficit_mm: undefined, frost_risk_forecast_7d: false, heat_stress_risk: "low" },
+      // expose series for charting
+      ndvi_series: ts,
       meta: { start_date: config.start_date, end_date: config.end_date, sensor_used: "Sentinel-2 L2A", observation_count: ts.length, fallback_used: false },
     };
   }
 
-  const { data, error } = await supabase.functions.invoke("eos-proxy", {
-    body: {
-      action: "summary",
-      polygon: _polygon,
-      crop_type: config.cropType,
-      planting_date: config.planting_date,
-      start_date: config.start_date,
-      end_date: config.end_date,
-      max_cloud_cover_in_aoi: config.max_cloud_cover_in_aoi,
-      exclude_cover_pixels: config.exclude_cover_pixels,
-      cloud_masking_level: config.cloud_masking_level,
-    },
-  });
+  // Live mode with simple retry/backoff to handle EOS 429 rate limits
+  const attemptInvoke = async (attempt: number) => {
+    const res = await supabase.functions.invoke("eos-proxy", {
+      body: {
+        action: "summary",
+        polygon: _polygon,
+        crop_type: config.cropType,
+        planting_date: config.planting_date,
+        start_date: config.start_date,
+        end_date: config.end_date,
+        max_cloud_cover_in_aoi: config.max_cloud_cover_in_aoi,
+        exclude_cover_pixels: config.exclude_cover_pixels,
+        cloud_masking_level: config.cloud_masking_level,
+      },
+    });
+    return res;
+  };
 
-  if (error) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const { data, error } = await attemptInvoke(attempt);
+    if (!error && data) {
+      return data as EosSummary;
+    }
+    const msg = String((error as any)?.message || "");
+    if (msg.includes("429") || msg.toLowerCase().includes("limit")) {
+      const backoff = 1000 * attempt * attempt; // 1s, 4s, 9s
+      console.warn(`eos-proxy summary rate-limited, retrying in ${backoff}ms (attempt ${attempt})`);
+      await new Promise((r) => setTimeout(r, backoff));
+      continue;
+    }
     console.error("eos-proxy summary error:", error);
-    // Fallback to building from demo data to keep UX smooth
-    return await getEosSummary(_polygon, { ...config, apiKey: "demo" });
+    break;
   }
-  return data as EosSummary;
+  // Fallback to demo to keep UX smooth
+  return await getEosSummary(_polygon, { ...config, apiKey: "demo" });
 }
 

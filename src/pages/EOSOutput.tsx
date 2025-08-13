@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { EosSummary, VegetationData, WeatherData, computeProductivity, getEosSummary, getVegetationTimeSeries, getWeatherSummary, type PolygonData, type EosConfig } from "@/lib/eos";
+import { EosSummary, computeProductivity, getEosSummary, type PolygonData, type EosConfig } from "@/lib/eos";
 import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { BarChart3, ArrowLeft, ThermometerSun, Droplets, Leaf, Activity } from "lucide-react";
 
@@ -31,8 +31,6 @@ const EOSOutput: React.FC = () => {
   const [polygon, setPolygon] = useState<PolygonData | null>(null);
   const [userCfg, setUserCfg] = useState<any>(null);
 
-  const [veg, setVeg] = useState<VegetationData | null>(null);
-  const [meteo, setMeteo] = useState<WeatherData | null>(null);
   const [summary, setSummary] = useState<EosSummary | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -77,13 +75,7 @@ const EOSOutput: React.FC = () => {
       if (!polygon || !eosConfig) return;
       setLoading(true);
       try {
-        const [vegRes, metRes, sumRes] = await Promise.all([
-          getVegetationTimeSeries(polygon, eosConfig),
-          getWeatherSummary(polygon, eosConfig),
-          getEosSummary(polygon, eosConfig),
-        ]);
-        setVeg(vegRes);
-        setMeteo(metRes);
+        const sumRes = await getEosSummary(polygon, eosConfig);
         setSummary(sumRes);
         toast({ title: "Analisi completata", description: "Dati aggiornati con successo." });
       } catch (e: any) {
@@ -99,7 +91,7 @@ const EOSOutput: React.FC = () => {
 
   if (!polygon || !userCfg) return null;
 
-  const ts = veg?.time_series || [];
+  const ts = (summary?.ndvi_series as any) || [];
 
   return (
     <main className="min-h-screen bg-background">
@@ -124,7 +116,7 @@ const EOSOutput: React.FC = () => {
             <p>Fertilizzazione: <span className="text-foreground font-medium">{userCfg.fertilization}</span></p>
             {userCfg.planting_date && <p>Semina: <span className="text-foreground font-medium">{userCfg.planting_date}</span></p>}
             <p>Periodo: <span className="text-foreground font-medium">{userCfg.start_date} → {userCfg.end_date}</span></p>
-            <p>Area: <span className="text-foreground font-medium">{polygon.area_ha} ha</span></p>
+            <p>Area: <span className="text-foreground font-medium">{Number(userCfg.area_ha ?? polygon.area_ha).toLocaleString('it-IT', { maximumFractionDigits: 2 })} ha</span></p>
           </div>
         </aside>
 
@@ -136,8 +128,8 @@ const EOSOutput: React.FC = () => {
                 <CardTitle className="flex items-center gap-2 text-foreground"><Leaf className="w-4 h-4" /> NDVI</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold text-foreground">{summary?.ndvi_data.current_value ?? "-"}</p>
-                <p className="text-sm text-muted-foreground">Trend 30gg: {summary?.ndvi_data.trend_30_days != null ? `${summary?.ndvi_data.trend_30_days}%` : "-"}</p>
+                <p className="text-2xl font-bold text-foreground">{summary?.ndvi_data.current_value != null ? summary.ndvi_data.current_value.toLocaleString('it-IT', { maximumFractionDigits: 2 }) : "-"}</p>
+                <p className="text-sm text-muted-foreground">Trend 30gg: {summary?.ndvi_data.trend_30_days != null ? `${summary.ndvi_data.trend_30_days.toLocaleString('it-IT', { maximumFractionDigits: 1 })}%` : "-"}</p>
               </CardContent>
             </Card>
             <Card className="border border-border">
@@ -145,8 +137,8 @@ const EOSOutput: React.FC = () => {
                 <CardTitle className="flex items-center gap-2 text-foreground"><Droplets className="w-4 h-4" /> NDMI / Stress idrico</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold text-foreground">{summary?.ndmi_data.current_value ?? "-"}</p>
-                <p className="text-sm text-muted-foreground">Livello: {summary?.ndmi_data.water_stress_level ?? "-"}</p>
+                <p className="text-2xl font-bold text-foreground">{summary?.ndmi_data.current_value != null ? summary.ndmi_data.current_value.toLocaleString('it-IT', { maximumFractionDigits: 2 }) : "-"}</p>
+                <p className="text-sm text-muted-foreground">Livello: {summary?.ndmi_data.water_stress_level ? ({ none: "Nessuno", mild: "Lieve", moderate: "Moderato", severe: "Severo" } as any)[summary.ndmi_data.water_stress_level] : "-"}</p>
               </CardContent>
             </Card>
             <Card className="border border-border">
@@ -154,7 +146,7 @@ const EOSOutput: React.FC = () => {
                 <CardTitle className="flex items-center gap-2 text-foreground"><Activity className="w-4 h-4" /> Fenologia</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold text-foreground">{summary?.phenology.current_stage ?? "-"}</p>
+                <p className="text-2xl font-bold text-foreground">{summary?.phenology.current_stage ? (({ germination: "Germinazione", tillering: "Accestimento", jointing: "Levata", heading: "Spigatura", flowering: "Fioritura", grain_filling: "Riempimento granella", maturity: "Maturazione", stable: "Stabile", unknown: "Sconosciuta", dormancy: "Dormienza", "green-up": "Ripresa vegetativa", senescence: "Senescenza" } as any)[summary.phenology.current_stage] ?? summary.phenology.current_stage) : "-"}</p>
                 <p className="text-sm text-muted-foreground">Giorni dalla semina: {summary?.phenology.days_from_planting ?? "-"}</p>
               </CardContent>
             </Card>
@@ -163,8 +155,8 @@ const EOSOutput: React.FC = () => {
                 <CardTitle className="flex items-center gap-2 text-foreground"><ThermometerSun className="w-4 h-4" /> Rischi meteo</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground">Stress termico: <span className="text-foreground font-medium">{summary?.weather_risks.heat_stress_risk ?? "-"}</span></p>
-                <p className="text-sm text-muted-foreground">Deficit precipitazioni: <span className="text-foreground font-medium">{summary?.weather_risks.precipitation_deficit_mm ?? "-"}</span></p>
+                <p className="text-sm text-muted-foreground">Stress termico: <span className="text-foreground font-medium">{summary?.weather_risks.heat_stress_risk ? ({ low: "Basso", medium: "Medio", high: "Alto" } as any)[summary.weather_risks.heat_stress_risk] : "-"}</span></p>
+                <p className="text-sm text-muted-foreground">Deficit precipitazioni: <span className="text-foreground font-medium">{summary?.weather_risks.precipitation_deficit_mm != null ? `${summary.weather_risks.precipitation_deficit_mm.toLocaleString('it-IT', { maximumFractionDigits: 1 })} mm` : "-"}</span></p>
               </CardContent>
             </Card>
           </div>
