@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Trash2, Square } from 'lucide-react';
+import { googleMapsLoader } from '@/lib/googleMapsLoader';
 
 interface PolygonDrawerProps {
   onPolygonChange: (polygon: { coordinates: number[][], area: number } | null) => void;
@@ -86,18 +87,28 @@ const GoogleMapsPolygonDrawer = forwardRef<PolygonDrawerRef, PolygonDrawerProps>
     };
 
     useEffect(() => {
-      const initializeMap = () => {
-        if (!mapRef.current || !window.google?.maps) return;
+      const initializeMap = async () => {
+        if (!mapRef.current) return;
 
-        // Initialize map
-        const map = new google.maps.Map(mapRef.current, {
-          center: { lat: initialCenter[0], lng: initialCenter[1] },
-          zoom: initialZoom,
-          mapTypeId: google.maps.MapTypeId.SATELLITE,
-          mapTypeControl: true,
-          streetViewControl: false,
-          fullscreenControl: true,
-        });
+        try {
+          // Wait for Google Maps to be fully loaded
+          await googleMapsLoader.load();
+          
+          // Double check that all required APIs are available
+          if (!window.google?.maps?.Map || !window.google?.maps?.MapTypeId || !window.google?.maps?.drawing?.DrawingManager) {
+            console.error('Google Maps API not fully loaded');
+            return;
+          }
+
+          // Initialize map
+          const map = new google.maps.Map(mapRef.current, {
+            center: { lat: initialCenter[0], lng: initialCenter[1] },
+            zoom: initialZoom,
+            mapTypeId: google.maps.MapTypeId.SATELLITE,
+            mapTypeControl: true,
+            streetViewControl: false,
+            fullscreenControl: true,
+          });
 
         mapInstanceRef.current = map;
 
@@ -144,23 +155,13 @@ const GoogleMapsPolygonDrawer = forwardRef<PolygonDrawerRef, PolygonDrawerProps>
           drawingManager.setDrawingMode(null);
         });
 
-        setIsMapLoaded(true);
+          setIsMapLoaded(true);
+        } catch (error) {
+          console.error('Failed to initialize Google Maps:', error);
+        }
       };
 
-      // Check if Google Maps is already loaded
-      if (window.google?.maps) {
-        initializeMap();
-      } else {
-        // Wait for Google Maps to load
-        const checkGoogleMaps = setInterval(() => {
-          if (window.google?.maps) {
-            clearInterval(checkGoogleMaps);
-            initializeMap();
-          }
-        }, 100);
-
-        return () => clearInterval(checkGoogleMaps);
-      }
+      initializeMap();
     }, [initialCenter, initialZoom, onPolygonChange]);
 
     const startDrawing = () => {
