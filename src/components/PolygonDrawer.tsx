@@ -4,18 +4,15 @@ import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Trash2, Square, Info } from 'lucide-react';
+import { Trash2, Info } from 'lucide-react';
 import { 
   DEFAULT_CENTER, 
   DEFAULT_ZOOM,
   validatePolygon,
-  calculatePolygonArea,
-  polygonToGeoJSON,
-  createMapboxMap,
-  isContainerReady,
-  validateMapboxToken
+  polygonToGeoJSON
 } from '@/lib/mapbox';
 import { useToast } from '@/hooks/use-toast';
+import { useMapboxStable } from '@/hooks/useMapboxStable';
 
 // Mapbox CSS now imported globally in index.css
 
@@ -39,226 +36,136 @@ export const PolygonDrawer = React.forwardRef<
   initialZoom = DEFAULT_ZOOM
 }, ref) => {
   const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<mapboxgl.Map | null>(null);
   const draw = useRef<MapboxDraw | null>(null);
   const [area, setArea] = useState<number | null>(null);
   const [isValidPolygon, setIsValidPolygon] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [isMapLoading, setIsMapLoading] = useState(true);
-  const [mapError, setMapError] = useState<string | null>(null);
   const { toast } = useToast();
+  
+  // Handle drawing events - defined outside to be accessible for cleanup
+  const handlePolygonUpdate = React.useCallback(() => {
+    if (!draw.current) return;
 
-  useEffect(() => {
-    if (!mapContainer.current || !mapboxToken) {
-      setIsMapLoading(false);
-      if (!mapboxToken) {
-        setMapError("Token Mapbox non disponibile");
-      }
+    const data = draw.current.getAll();
+    const polygons = data.features.filter(f => f.geometry.type === 'Polygon');
+
+    if (polygons.length === 0) {
+      setArea(null);
+      setIsValidPolygon(false);
+      setValidationError(null);
+      onPolygonChange(null);
       return;
     }
 
-    const initializeMap = () => {
-      try {
-        console.log('Initializing map with token:', mapboxToken.substring(0, 20) + '...');
-        
-        // Validate token format
-        if (!validateMapboxToken(mapboxToken)) {
-          setMapError("Token Mapbox non valido");
-          setIsMapLoading(false);
-          return;
-        }
-        
-        const container = mapContainer.current;
-        if (!isContainerReady(container)) {
-          console.warn('Map container not ready:', { 
-            width: container?.offsetWidth, 
-            height: container?.offsetHeight,
-            connected: container?.isConnected 
-          });
-          setMapError("Container della mappa non pronto");
-          setIsMapLoading(false);
-          return;
-        }
+    // Only allow one polygon
+    if (polygons.length > 1) {
+      // Remove all but the last polygon
+      const toDelete = polygons.slice(0, -1).map(p => p.id);
+      draw.current.delete(toDelete as string[]);
+      toast({
+        title: "Un solo poligono",
+        description: "È possibile disegnare solo un campo alla volta",
+        variant: "default"
+      });
+    }
 
-        // Create map using standardized function
-        map.current = createMapboxMap(container!, mapboxToken, initialCenter, initialZoom);
-        console.log('Map created, waiting for load event...');
-        
-      } catch (error) {
-        console.error('Error creating map:', error);
-        setMapError(`Errore inizializzazione mappa: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`);
-        setIsMapLoading(false);
-        return;
+    const polygon = polygons[polygons.length - 1];
+    const geometry = polygon.geometry as any;
+    const coordinates = geometry.coordinates[0];
+
+    // Validate polygon
+    const validation = validatePolygon(coordinates);
+    setIsValidPolygon(validation.isValid);
+    setValidationError(validation.error || null);
+    setArea(validation.area || null);
+
+    if (validation.isValid) {
+      const geoJsonPolygon = polygonToGeoJSON(coordinates);
+      onPolygonChange(geoJsonPolygon, validation.area);
+    } else {
+      onPolygonChange(null);
+      if (validation.error) {
+        toast({
+          title: "Poligono non valido",
+          description: validation.error,
+          variant: "destructive"
+        });
       }
-    };
+    }
+  }, [draw, onPolygonChange, toast]);
+  
+  // Use stable map hook to prevent re-initializations
+  const { map, isLoading, error, isInitialized, retry } = useMapboxStable(mapContainer, {
+    token: mapboxToken,
+    center: initialCenter,
+    zoom: initialZoom,
+    onLoad: () => {
+      setupDrawControls();
+    },
+    onError: (errorMsg) => {
+      console.error('Map initialization error:', errorMsg);
+    }
+  });
 
-    const setupMapControls = () => {
-      if (!map.current) return;
+  // Setup draw controls when map is loaded
+  const setupDrawControls = React.useCallback(() => {
+    if (!map || !isInitialized) return;
+    
+    try {
+      // Add navigation controls
+      map.addControl(new mapboxgl.NavigationControl(), 'top-right');
       
-      // Wait for map to load before adding controls
-      map.current.on('load', () => {
-        console.log('Map loaded successfully');
-        setIsMapLoading(false);
-        setMapError(null);
-        
-        // Add navigation controls
-        if (map.current) {
-          map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
-          
-          // Initialize drawing tools
-          draw.current = new MapboxDraw({
-            displayControlsDefault: false,
-            controls: {
-              polygon: true,
-              trash: true
-            },
-            defaultMode: 'draw_polygon'
-          });
-
-          map.current.addControl(draw.current, 'top-left');
-          
-          // Handle drawing events
-          const handlePolygonUpdate = () => {
-            if (!draw.current) return;
-
-            const data = draw.current.getAll();
-            const polygons = data.features.filter(f => f.geometry.type === 'Polygon');
-
-            if (polygons.length === 0) {
-              setArea(null);
-              setIsValidPolygon(false);
-              setValidationError(null);
-              onPolygonChange(null);
-              return;
-            }
-
-            // Only allow one polygon
-            if (polygons.length > 1) {
-              // Remove all but the last polygon
-              const toDelete = polygons.slice(0, -1).map(p => p.id);
-              draw.current.delete(toDelete as string[]);
-              toast({
-                title: "Un solo poligono",
-                description: "È possibile disegnare solo un campo alla volta",
-                variant: "default"
-              });
-            }
-
-            const polygon = polygons[polygons.length - 1];
-            const geometry = polygon.geometry as any; // MapboxDraw polygon geometry
-            const coordinates = geometry.coordinates[0];
-
-            // Validate polygon
-            const validation = validatePolygon(coordinates);
-            setIsValidPolygon(validation.isValid);
-            setValidationError(validation.error || null);
-            setArea(validation.area || null);
-
-            if (validation.isValid) {
-              const geoJsonPolygon = polygonToGeoJSON(coordinates);
-              onPolygonChange(geoJsonPolygon, validation.area);
-            } else {
-              onPolygonChange(null);
-              if (validation.error) {
-                toast({
-                  title: "Poligono non valido",
-                  description: validation.error,
-                  variant: "destructive"
-                });
-              }
-            }
-          };
-
-          map.current.on('draw.create', handlePolygonUpdate);
-          map.current.on('draw.update', handlePolygonUpdate);
-          map.current.on('draw.delete', handlePolygonUpdate);
-        }
+      // Initialize drawing tools
+      draw.current = new MapboxDraw({
+        displayControlsDefault: false,
+        controls: {
+          polygon: true,
+          trash: true
+        },
+        defaultMode: 'draw_polygon'
       });
 
-      map.current.on('error', (e) => {
-        console.error('Map error:', e);
-        setMapError(`Errore caricamento mappa: ${e.error?.message || 'Errore sconosciuto'}`);
-        setIsMapLoading(false);
-      });
-    };
-
-    // Initialize with a small delay to ensure DOM is ready
-    setTimeout(() => {
-      initializeMap();
-      setupMapControls();
-    }, 100);
-
-
+      map.addControl(draw.current, 'top-left');
+      
+      // Add event listeners
+      map.on('draw.create', handlePolygonUpdate);
+      map.on('draw.update', handlePolygonUpdate);
+      map.on('draw.delete', handlePolygonUpdate);
+      
+    } catch (error) {
+      console.error('Error setting up draw controls:', error);
+    }
+  }, [map, isInitialized, handlePolygonUpdate]);
+  
+  // Cleanup draw controls when component unmounts
+  useEffect(() => {
     return () => {
-      // Properly cleanup map and drawing controls following Mapbox best practices
-      try {
-        if (map.current) {
-          // Remove specific event listeners first
-          const eventsToRemove = ['draw.create', 'draw.update', 'draw.delete', 'load', 'error'];
-          eventsToRemove.forEach(event => {
-            try {
-              map.current?.off(event as any, undefined as any);
-            } catch (e) {
-              console.warn(`Failed to remove ${event} listener:`, e);
-            }
-          });
+      if (draw.current && map) {
+        try {
+          // Remove drawing event listeners
+          map.off('draw.create', handlePolygonUpdate);
+          map.off('draw.update', handlePolygonUpdate); 
+          map.off('draw.delete', handlePolygonUpdate);
           
-          // Remove MapboxDraw control if it exists
-          if (draw.current) {
-            try {
-              if (map.current.hasControl(draw.current)) {
-                map.current.removeControl(draw.current);
-              }
-            } catch (e) {
-              console.warn('Error removing draw control:', e);
-            }
-            draw.current = null;
+          // Remove draw control
+          if (map.hasControl(draw.current)) {
+            map.removeControl(draw.current);
           }
-          
-          // Remove navigation control if it exists
-          try {
-            const controls = map.current.getContainer().querySelectorAll('.mapboxgl-control-container');
-            controls.forEach(control => {
-              try {
-                control.remove();
-              } catch (e) {
-                console.warn('Error removing control:', e);
-              }
-            });
-          } catch (e) {
-            console.warn('Error removing controls:', e);
-          }
-          
-          // Wait a moment then remove map
-          setTimeout(() => {
-            try {
-              if (map.current && map.current.getContainer()) {
-                map.current.remove();
-              }
-            } catch (e) {
-              console.warn('Error removing map:', e);
-            } finally {
-              map.current = null;
-            }
-          }, 50);
+        } catch (e) {
+          console.warn('Error cleaning up draw controls:', e);
         }
-        
-      } catch (error) {
-        console.warn('Error during map cleanup:', error);
-        // Force cleanup even if error occurred
-        map.current = null;
         draw.current = null;
       }
     };
-  }, [mapboxToken, initialCenter, initialZoom, onPolygonChange, toast]);
+  }, [map, handlePolygonUpdate]);
 
   // Expose flyToLocation function to parent via ref
   React.useImperativeHandle(ref, () => ({
     flyToLocation: (center: [number, number], bbox?: [number, number, number, number]) => {
-      if (!map.current) return;
+      if (!map) return;
 
       if (bbox) {
-        map.current.fitBounds([
+        map.fitBounds([
           [bbox[0], bbox[1]], 
           [bbox[2], bbox[3]]
         ], { 
@@ -266,7 +173,7 @@ export const PolygonDrawer = React.forwardRef<
           maxZoom: 15 
         });
       } else {
-        map.current.flyTo({
+        map.flyTo({
           center,
           zoom: 14,
           duration: 1500
@@ -287,34 +194,21 @@ export const PolygonDrawer = React.forwardRef<
   };
 
   const retryMapLoad = () => {
-    setIsMapLoading(true);
-    setMapError(null);
-    
-    // Safely cleanup existing map instance
-    try {
-      if (draw.current) {
-        if (map.current && map.current.hasControl(draw.current)) {
-          map.current.removeControl(draw.current);
+    // Clean up draw controls first
+    if (draw.current && map) {
+      try {
+        if (map.hasControl(draw.current)) {
+          map.removeControl(draw.current);
         }
         draw.current = null;
+      } catch (error) {
+        console.warn('Error cleaning up draw controls for retry:', error);
+        draw.current = null;
       }
-      
-      if (map.current) {
-        if (map.current.loaded()) {
-          map.current.remove();
-        }
-        map.current = null;
-      }
-    } catch (error) {
-      console.warn('Error during map cleanup for retry:', error);
-      map.current = null;
-      draw.current = null;
     }
     
-    // Force re-initialization by triggering the useEffect
-    setTimeout(() => {
-      setIsMapLoading(true);
-    }, 100);
+    // Use the stable hook's retry function
+    retry();
   };
 
   return (
@@ -327,7 +221,7 @@ export const PolygonDrawer = React.forwardRef<
         />
         
         {/* Loading overlay */}
-        {isMapLoading && (
+        {isLoading && (
           <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-20">
             <div className="text-center space-y-2">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
@@ -337,13 +231,13 @@ export const PolygonDrawer = React.forwardRef<
         )}
         
         {/* Error overlay */}
-        {mapError && (
+        {error && (
           <div className="absolute inset-0 bg-background/95 backdrop-blur-sm flex items-center justify-center z-20">
             <div className="text-center space-y-4 p-6">
               <div className="text-destructive">
                 <Info className="h-8 w-8 mx-auto mb-2" />
                 <p className="font-medium">Errore caricamento mappa</p>
-                <p className="text-sm text-muted-foreground mt-1">{mapError}</p>
+                <p className="text-sm text-muted-foreground mt-1">{error}</p>
               </div>
               <Button 
                 onClick={retryMapLoad}
