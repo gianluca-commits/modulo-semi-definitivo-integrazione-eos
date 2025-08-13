@@ -29,14 +29,11 @@ function setMetaTags(title: string, description: string, canonicalPath: string) 
   const origin = window.location.origin;
   link.href = `${origin}${canonicalPath}`;
 }
-
 const EOSOutput: React.FC = () => {
   const navigate = useNavigate();
   const [polygon, setPolygon] = useState<PolygonData | null>(null);
-  
   const [userCfg, setUserCfg] = useState<any>(null);
   const [mapboxToken, setMapboxToken] = useState<string>("");
-
   const [summary, setSummary] = useState<EosSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [usingSaved, setUsingSaved] = useState(false);
@@ -47,31 +44,25 @@ const EOSOutput: React.FC = () => {
     exported_at: string;
   } | null>(null);
   const [usePermissiveFilters, setUsePermissiveFilters] = useState(false);
-const [refreshKey, setRefreshKey] = useState(0);
-const [showDemo, setShowDemo] = useState(false);
-
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [showDemo, setShowDemo] = useState(false);
   const eosConfig: EosConfig | null = useMemo(() => {
     if (!userCfg) return null;
     const cfg: EosConfig = {
-      apiKey: "", // handled by Supabase Edge Function secrets
+      apiKey: "",
+      // handled by Supabase Edge Function secrets
       cropType: userCfg.cropType || "sunflower",
       planting_date: userCfg.planting_date,
       start_date: userCfg.start_date,
       end_date: userCfg.end_date,
       max_cloud_cover_in_aoi: usePermissiveFilters ? 70 : 30,
       exclude_cover_pixels: usePermissiveFilters ? false : true,
-      cloud_masking_level: usePermissiveFilters ? 0 : 2,
+      cloud_masking_level: usePermissiveFilters ? 0 : 2
     };
     return cfg;
   }, [userCfg, usePermissiveFilters]);
-
   useEffect(() => {
-    setMetaTags(
-      "Risultati analisi | EOS Agritech",
-      "KPI NDVI/NDMI, fenologia e rischi meteo per il tuo campo.",
-      "/output"
-    );
-
+    setMetaTags("Risultati analisi | EOS Agritech", "KPI NDVI/NDMI, fenologia e rischi meteo per il tuo campo.", "/output");
     try {
       const p = localStorage.getItem("eos_polygon");
       const c = localStorage.getItem("eos_user_config");
@@ -81,12 +72,11 @@ const [showDemo, setShowDemo] = useState(false);
       }
       setPolygon(JSON.parse(p));
       setUserCfg(JSON.parse(c));
-
       const last = localStorage.getItem("eos_last_summary");
       if (last) {
         try {
           const parsed = JSON.parse(last);
-          const invalid = parsed?.summary?.meta?.fallback_used || (parsed?.summary?.meta?.observation_count === 0);
+          const invalid = parsed?.summary?.meta?.fallback_used || parsed?.summary?.meta?.observation_count === 0;
           if (parsed?.summary && !invalid) {
             setSavedBundle(parsed);
           } else {
@@ -98,7 +88,9 @@ const [showDemo, setShowDemo] = useState(false);
       // Fetch Mapbox token for visualization
       const fetchMapboxToken = async () => {
         try {
-          const { data } = await supabase.functions.invoke('mapbox-config');
+          const {
+            data
+          } = await supabase.functions.invoke('mapbox-config');
           if (data?.mapboxToken) {
             setMapboxToken(data.mapboxToken);
           }
@@ -106,13 +98,11 @@ const [showDemo, setShowDemo] = useState(false);
           console.warn('Failed to fetch Mapbox token for visualization:', error);
         }
       };
-      
       fetchMapboxToken();
     } catch (e) {
       navigate("/");
     }
   }, [navigate]);
-
   useEffect(() => {
     const run = async () => {
       if (!polygon || !eosConfig) return;
@@ -127,20 +117,33 @@ const [showDemo, setShowDemo] = useState(false);
           const obsCount = sumRes?.meta?.observation_count ?? 0;
           const usedFallback = Boolean(sumRes?.meta?.fallback_used);
           if (obsCount > 0 && !usedFallback) {
-            localStorage.setItem(
-              "eos_last_summary",
-              JSON.stringify({ polygon, userCfg, summary: sumRes, exported_at: new Date().toISOString() })
-            );
+            localStorage.setItem("eos_last_summary", JSON.stringify({
+              polygon,
+              userCfg,
+              summary: sumRes,
+              exported_at: new Date().toISOString()
+            }));
           }
         } catch {}
-        toast({ title: "Analisi completata", description: "Dati aggiornati con successo." });
+        toast({
+          title: "Analisi completata",
+          description: "Dati aggiornati con successo."
+        });
       } catch (e: any) {
         if (savedBundle?.summary) {
           setSummary(savedBundle.summary);
           setUsingSaved(true);
-          toast({ title: "Nessun dato nuovo", description: "Mostro l'ultimo risultato salvato.", variant: "default" });
+          toast({
+            title: "Nessun dato nuovo",
+            description: "Mostro l'ultimo risultato salvato.",
+            variant: "default"
+          });
         } else {
-          toast({ title: "Errore analisi", description: e?.message ?? "Errore sconosciuto", variant: "destructive" });
+          toast({
+            title: "Errore analisi",
+            description: e?.message ?? "Errore sconosciuto",
+            variant: "destructive"
+          });
         }
       } finally {
         setLoading(false);
@@ -148,22 +151,20 @@ const [showDemo, setShowDemo] = useState(false);
     };
     run();
   }, [polygon, eosConfig, refreshKey, savedBundle, userCfg]);
-
   const productivity = useMemo(() => computeProductivity(userCfg?.cropType || "sunflower"), [userCfg?.cropType]);
   const demoTs = useMemo(() => demoVegetation().time_series, []);
-
   if (!polygon || !userCfg) return null;
-
-const rawTs = (summary?.ndvi_series as any) || [];
-const noRealObs = (!rawTs.length) || (summary?.meta?.observation_count === 0);
-const isDemo = showDemo || noRealObs;
-const ts = isDemo && showDemo ? demoTs : rawTs;
-
+  const rawTs = summary?.ndvi_series as any || [];
+  const noRealObs = !rawTs.length || summary?.meta?.observation_count === 0;
+  const isDemo = showDemo || noRealObs;
+  const ts = isDemo && showDemo ? demoTs : rawTs;
   const fileSafe = (s: string) => (s || "").replace(/[^a-z0-9-_]+/gi, "_").toLowerCase();
-
   const handleExportJSON = () => {
     if (!summary) {
-      toast({ title: "Nessun dato da esportare", variant: "destructive" });
+      toast({
+        title: "Nessun dato da esportare",
+        variant: "destructive"
+      });
       return;
     }
     const payload = {
@@ -171,37 +172,41 @@ const ts = isDemo && showDemo ? demoTs : rawTs;
       userCfg,
       summary,
       demo: isDemo,
-      exported_at: new Date().toISOString(),
+      exported_at: new Date().toISOString()
     };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json"
+    });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = `eos_analisi_${fileSafe(userCfg?.cropType || "campo")}.json`;
     a.click();
     URL.revokeObjectURL(a.href);
   };
-
   const handleExportCSV = () => {
     if (!ts.length || isDemo) {
-      toast({ title: "Esportazione disabilitata", description: "CSV NDVI non disponibile per dati di esempio.", variant: "destructive" });
+      toast({
+        title: "Esportazione disabilitata",
+        description: "CSV NDVI non disponibile per dati di esempio.",
+        variant: "destructive"
+      });
       return;
     }
     const rows = [["date", "NDVI", "NDMI"], ...ts.map((p: any) => [p.date, p.NDVI, p.NDMI])];
-    const csv = rows.map((r) => r.join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const csv = rows.map(r => r.join(",")).join("\n");
+    const blob = new Blob([csv], {
+      type: "text/csv;charset=utf-8;"
+    });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = `ndvi_series_${fileSafe(userCfg?.cropType || "campo")}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   };
-
   const handlePrint = () => {
     window.print();
   };
-
-  return (
-    <main className="min-h-screen bg-background">
+  return <main className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
         <div className="max-w-6xl mx-auto px-4 py-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -252,31 +257,28 @@ const ts = isDemo && showDemo ? demoTs : rawTs;
         </Card>
 
         {/* Polygon Visualization */}
-        {polygon && (
-          <GoogleMapsVisualization
-            polygon={polygon}
-            title="Campo Analizzato"
-            description={`${polygon.source} • ${userCfg.cropType} • ${polygon.area_ha} ha`}
-          />
-        )}
+        {polygon && <GoogleMapsVisualization polygon={polygon} title="Campo Analizzato" description={`${polygon.source} • ${userCfg.cropType} • ${polygon.area_ha} ha`} />}
 
-        {(usingSaved || noRealObs) && (
-          <Alert variant={usingSaved ? "default" : "destructive"}>
+        {(usingSaved || noRealObs) && <Alert variant={usingSaved ? "default" : "destructive"}>
             <AlertTitle>{usingSaved ? "Stai visualizzando l'ultimo risultato salvato" : "Nessun risultato trovato nel periodo"}</AlertTitle>
             <AlertDescription>
-              {usingSaved
-                ? "Non sono arrivati dati nuovi. Puoi riprovare ora o esportare i dati salvati."
-                : "Prova ad allargare l'intervallo o a usare filtri più permissivi."}
+              {usingSaved ? "Non sono arrivati dati nuovi. Puoi riprovare ora o esportare i dati salvati." : "Prova ad allargare l'intervallo o a usare filtri più permissivi."}
             </AlertDescription>
             <div className="mt-3 flex gap-2">
-              <Button size="sm" variant="secondary" onClick={() => { setUsePermissiveFilters(false); setShowDemo(false); setRefreshKey((k) => k + 1); }}>Riprova</Button>
-              <Button size="sm" onClick={() => { setUsePermissiveFilters(true); setShowDemo(false); setRefreshKey((k) => k + 1); }}>Riprova con filtri estesi</Button>
+              <Button size="sm" variant="secondary" onClick={() => {
+            setUsePermissiveFilters(false);
+            setShowDemo(false);
+            setRefreshKey(k => k + 1);
+          }}>Riprova</Button>
+              <Button size="sm" onClick={() => {
+            setUsePermissiveFilters(true);
+            setShowDemo(false);
+            setRefreshKey(k => k + 1);
+          }}>Riprova con filtri estesi</Button>
             </div>
-          </Alert>
-        )}
+          </Alert>}
 
-        {summary?.meta?.observation_count === 0 && (
-          <Alert variant="destructive">
+        {summary?.meta?.observation_count === 0 && <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Nessuna Osservazione Trovata</AlertTitle>
             <AlertDescription className="space-y-2">
@@ -289,17 +291,15 @@ const ts = isDemo && showDemo ? demoTs : rawTs;
                   <li>Verifica che le coordinate del campo siano corrette</li>
                 </ul>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => { setUsePermissiveFilters(true); setShowDemo(false); setRefreshKey((k) => k + 1); }}
-                className="mt-2"
-              >
+              <Button variant="outline" size="sm" onClick={() => {
+            setUsePermissiveFilters(true);
+            setShowDemo(false);
+            setRefreshKey(k => k + 1);
+          }} className="mt-2">
                 Riprova con Filtri Estesi
               </Button>
             </AlertDescription>
-          </Alert>
-        )}
+          </Alert>}
 
         <div className="grid lg:grid-cols-3 gap-6">
         <aside className="bg-card rounded-xl border border-border p-6">
@@ -310,7 +310,9 @@ const ts = isDemo && showDemo ? demoTs : rawTs;
             <p>Fertilizzazione: <span className="text-foreground font-medium">{userCfg.fertilization}</span></p>
             {userCfg.planting_date && <p>Semina: <span className="text-foreground font-medium">{userCfg.planting_date}</span></p>}
             <p>Periodo: <span className="text-foreground font-medium">{userCfg.start_date} → {userCfg.end_date}</span></p>
-            <p>Area: <span className="text-foreground font-medium">{Number(userCfg.area_ha ?? polygon.area_ha).toLocaleString('it-IT', { maximumFractionDigits: 2 })} ha</span></p>
+            <p>Area: <span className="text-foreground font-medium">{Number(userCfg.area_ha ?? polygon.area_ha).toLocaleString('it-IT', {
+                  maximumFractionDigits: 2
+                })} ha</span></p>
           </div>
         </aside>
 
@@ -319,11 +321,15 @@ const ts = isDemo && showDemo ? demoTs : rawTs;
           <div className="grid md:grid-cols-2 gap-4">
             <Card className="border border-border">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-foreground"><Leaf className="w-4 h-4" /> NDVI {isDemo && (<Badge variant="secondary" className="ml-2">Dati di esempio</Badge>)}</CardTitle>
+                <CardTitle className="flex items-center gap-2 text-foreground"><Leaf className="w-4 h-4" /> NDVI {isDemo && <Badge variant="secondary" className="ml-2">Dati di esempio</Badge>}</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold text-foreground">{summary?.ndvi_data.current_value != null ? summary.ndvi_data.current_value.toLocaleString('it-IT', { maximumFractionDigits: 2 }) : "-"}</p>
-                <p className="text-sm text-muted-foreground">Trend 30gg: {summary?.ndvi_data.trend_30_days != null ? `${summary.ndvi_data.trend_30_days.toLocaleString('it-IT', { maximumFractionDigits: 1 })}%` : "-"}</p>
+                <p className="text-2xl font-bold text-foreground">{summary?.ndvi_data.current_value != null ? summary.ndvi_data.current_value.toLocaleString('it-IT', {
+                    maximumFractionDigits: 2
+                  }) : "-"}</p>
+                <p className="text-sm text-muted-foreground">Trend 30gg: {summary?.ndvi_data.trend_30_days != null ? `${summary.ndvi_data.trend_30_days.toLocaleString('it-IT', {
+                    maximumFractionDigits: 1
+                  })}%` : "-"}</p>
               </CardContent>
             </Card>
             <Card className="border border-border">
@@ -331,8 +337,15 @@ const ts = isDemo && showDemo ? demoTs : rawTs;
                 <CardTitle className="flex items-center gap-2 text-foreground"><Droplets className="w-4 h-4" /> NDMI / Stress idrico</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold text-foreground">{summary?.ndmi_data.current_value != null ? summary.ndmi_data.current_value.toLocaleString('it-IT', { maximumFractionDigits: 2 }) : "-"}</p>
-                <p className="text-sm text-muted-foreground">Livello: {summary?.ndmi_data.water_stress_level ? ({ none: "Nessuno", mild: "Lieve", moderate: "Moderato", severe: "Severo" } as any)[summary.ndmi_data.water_stress_level] : "-"}</p>
+                <p className="text-2xl font-bold text-foreground">{summary?.ndmi_data.current_value != null ? summary.ndmi_data.current_value.toLocaleString('it-IT', {
+                    maximumFractionDigits: 2
+                  }) : "-"}</p>
+                <p className="text-sm text-muted-foreground">Livello: {summary?.ndmi_data.water_stress_level ? ({
+                    none: "Nessuno",
+                    mild: "Lieve",
+                    moderate: "Moderato",
+                    severe: "Severo"
+                  } as any)[summary.ndmi_data.water_stress_level] : "-"}</p>
               </CardContent>
             </Card>
             <Card className="border border-border">
@@ -340,7 +353,20 @@ const ts = isDemo && showDemo ? demoTs : rawTs;
                 <CardTitle className="flex items-center gap-2 text-foreground"><Activity className="w-4 h-4" /> Fenologia</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-2xl font-bold text-foreground">{summary?.phenology.current_stage ? (({ germination: "Germinazione", tillering: "Accestimento", jointing: "Levata", heading: "Spigatura", flowering: "Fioritura", grain_filling: "Riempimento granella", maturity: "Maturazione", stable: "Stabile", unknown: "Sconosciuta", dormancy: "Dormienza", "green-up": "Ripresa vegetativa", senescence: "Senescenza" } as any)[summary.phenology.current_stage] ?? summary.phenology.current_stage) : "-"}</p>
+                <p className="text-2xl font-bold text-foreground">{summary?.phenology.current_stage ? ({
+                    germination: "Germinazione",
+                    tillering: "Accestimento",
+                    jointing: "Levata",
+                    heading: "Spigatura",
+                    flowering: "Fioritura",
+                    grain_filling: "Riempimento granella",
+                    maturity: "Maturazione",
+                    stable: "Stabile",
+                    unknown: "Sconosciuta",
+                    dormancy: "Dormienza",
+                    "green-up": "Ripresa vegetativa",
+                    senescence: "Senescenza"
+                  } as any)[summary.phenology.current_stage] ?? summary.phenology.current_stage : "-"}</p>
                 <p className="text-sm text-muted-foreground">Giorni dalla semina: {summary?.phenology.days_from_planting ?? "-"}</p>
               </CardContent>
             </Card>
@@ -349,8 +375,14 @@ const ts = isDemo && showDemo ? demoTs : rawTs;
                 <CardTitle className="flex items-center gap-2 text-foreground"><ThermometerSun className="w-4 h-4" /> Rischi meteo</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground">Stress termico: <span className="text-foreground font-medium">{summary?.weather_risks.heat_stress_risk ? ({ low: "Basso", medium: "Medio", high: "Alto" } as any)[summary.weather_risks.heat_stress_risk] : "-"}</span></p>
-                <p className="text-sm text-muted-foreground">Deficit precipitazioni: <span className="text-foreground font-medium">{summary?.weather_risks.precipitation_deficit_mm != null ? `${summary.weather_risks.precipitation_deficit_mm.toLocaleString('it-IT', { maximumFractionDigits: 1 })} mm` : "-"}</span></p>
+                <p className="text-sm text-muted-foreground">Stress termico: <span className="text-foreground font-medium">{summary?.weather_risks.heat_stress_risk ? ({
+                      low: "Basso",
+                      medium: "Medio",
+                      high: "Alto"
+                    } as any)[summary.weather_risks.heat_stress_risk] : "-"}</span></p>
+                <p className="text-sm text-muted-foreground">Deficit precipitazioni: <span className="text-foreground font-medium">{summary?.weather_risks.precipitation_deficit_mm != null ? `${summary.weather_risks.precipitation_deficit_mm.toLocaleString('it-IT', {
+                      maximumFractionDigits: 1
+                    })} mm` : "-"}</span></p>
               </CardContent>
             </Card>
           </div>
@@ -358,52 +390,44 @@ const ts = isDemo && showDemo ? demoTs : rawTs;
           {/* Chart */}
           <Card className="border border-border">
             <CardHeader>
-              <CardTitle className="text-foreground">Andamento NDVI {isDemo && (<Badge variant="secondary" className="ml-2">Dati di esempio</Badge>)}</CardTitle>
+              <CardTitle className="text-foreground">Andamento NDVI {isDemo && <Badge variant="secondary" className="ml-2">Dati di esempio</Badge>}</CardTitle>
             </CardHeader>
             <CardContent className="h-64">
-              {ts.length ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={ts} margin={{ left: 12, right: 12, top: 10, bottom: 10 }}>
+              {ts.length ? <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={ts} margin={{
+                  left: 12,
+                  right: 12,
+                  top: 10,
+                  bottom: 10
+                }}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" tick={{ fill: "hsl(var(--muted-foreground))" }} />
-                    <YAxis domain={[0, 1]} tick={{ fill: "hsl(var(--muted-foreground))" }} />
-                    <ReTooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", color: "hsl(var(--foreground))" }} />
+                    <XAxis dataKey="date" tick={{
+                    fill: "hsl(var(--muted-foreground))"
+                  }} />
+                    <YAxis domain={[0, 1]} tick={{
+                    fill: "hsl(var(--muted-foreground))"
+                  }} />
+                    <ReTooltip contentStyle={{
+                    background: "hsl(var(--card))",
+                    border: "1px solid hsl(var(--border))",
+                    color: "hsl(var(--foreground))"
+                  }} />
                     <Line type="monotone" dataKey="NDVI" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
                   </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="text-sm text-muted-foreground space-y-2">
+                </ResponsiveContainer> : <div className="text-sm text-muted-foreground space-y-2">
                   <p>Nessun dato NDVI disponibile nel periodo selezionato.</p>
                   <Button size="sm" variant="secondary" onClick={() => setShowDemo(true)}>Mostra dati di esempio</Button>
-                </div>
-              )}
+                </div>}
             </CardContent>
           </Card>
 
           {/* Productivity */}
-          <Card className="border border-border">
-            <CardHeader>
-              <CardTitle className="text-foreground">Resa attesa (nostra stima)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold text-foreground">{productivity.predicted_yield_ton_ha} t/ha</p>
-              <p className="text-sm text-muted-foreground">Confidenza: {productivity.confidence_level}% • Ricavi stimati: €{productivity.expected_revenue_eur_ha}/ha</p>
-              <ul className="list-disc pl-5 mt-2 text-sm text-muted-foreground">
-                {productivity.recommendations.map((r, i) => (
-                  <li key={i}>{r}</li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
+          
         </article>
         </div>
       </section>
 
-      {loading && (
-        <div className="max-w-6xl mx-auto px-4 pb-8 text-sm text-muted-foreground">Caricamento in corso…</div>
-      )}
-    </main>
-  );
+      {loading && <div className="max-w-6xl mx-auto px-4 pb-8 text-sm text-muted-foreground">Caricamento in corso…</div>}
+    </main>;
 };
-
 export default EOSOutput;
