@@ -124,10 +124,13 @@ export const PolygonDrawer = React.forwardRef<
       // Add navigation controls
       map.addControl(new mapboxgl.NavigationControl(), 'top-right');
       
-      // Initialize drawing tools with no default controls (we'll add our own)
+      // Initialize drawing tools with some default controls and our custom ones
       draw.current = new MapboxDraw({
         displayControlsDefault: false,
-        controls: {},
+        controls: {
+          polygon: true,
+          trash: true
+        },
         defaultMode: 'draw_polygon',
         userProperties: true,
         clickBuffer: 2,
@@ -317,14 +320,14 @@ export const PolygonDrawer = React.forwardRef<
               <Info className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
               <div className="text-sm">
                 <p className="font-medium mb-1">
-                  {drawingMode === 'draw_polygon' && 'Disegna il campo:'}
-                  {drawingMode === 'direct_select' && 'Modifica il poligono:'}
-                  {drawingMode === 'simple_select' && 'Poligono completato:'}
+                  {!hasPolygon && 'Disegna il campo sulla mappa'}
+                  {hasPolygon && drawingMode === 'direct_select' && 'Modifica il poligono:'}
+                  {hasPolygon && drawingMode === 'simple_select' && 'Poligono completato:'}
                 </p>
                 <p className="text-muted-foreground">
-                  {drawingMode === 'draw_polygon' && 'Clicca sulla mappa per aggiungere punti. Doppio click per completare.'}
-                  {drawingMode === 'direct_select' && 'Trascina i punti per modificare la forma del campo.'}
-                  {drawingMode === 'simple_select' && 'Usa i controlli qui sotto per modificare o ricreare il campo.'}
+                  {!hasPolygon && 'Clicca sulla mappa per iniziare a disegnare il campo. Doppio click per completare.'}
+                  {hasPolygon && drawingMode === 'direct_select' && 'Trascina i punti per modificare la forma del campo.'}
+                  {hasPolygon && drawingMode === 'simple_select' && 'Usa i controlli qui sotto per modificare o ricreare il campo.'}
                 </p>
                 {pointCount > 0 && (
                   <p className="text-xs text-muted-foreground mt-1">
@@ -335,59 +338,68 @@ export const PolygonDrawer = React.forwardRef<
             </div>
           </Card>
 
-          {/* Control buttons */}
-          {(hasPolygon || drawingMode !== 'draw_polygon') && (
-            <Card className="p-3 bg-background/95 backdrop-blur-sm">
-              <div className="flex flex-wrap gap-2">
-                {hasPolygon && drawingMode !== 'direct_select' && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={enterEditMode}
-                    className="text-xs"
-                  >
-                    <Edit3 className="h-3 w-3 mr-1" />
-                    Modifica
-                  </Button>
-                )}
-                
-                {drawingMode === 'direct_select' && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={exitEditMode}
-                    className="text-xs"
-                  >
-                    <Hand className="h-3 w-3 mr-1" />
-                    Sposta
-                  </Button>
-                )}
-
+          {/* Control buttons - always show */}
+          <Card className="p-3 bg-background/95 backdrop-blur-sm">
+            <div className="flex flex-wrap gap-2">
+              {!hasPolygon && (
                 <Button
                   size="sm"
-                  variant="outline"
                   onClick={startNewPolygon}
                   className="text-xs"
                 >
                   <Plus className="h-3 w-3 mr-1" />
-                  Nuovo
+                  Inizia a disegnare
                 </Button>
+              )}
 
-                {drawingMode === 'draw_polygon' && pointCount > 0 && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={undoLastPoint}
-                    className="text-xs"
-                    disabled
-                  >
-                    <Undo2 className="h-3 w-3 mr-1" />
-                    Annulla
-                  </Button>
-                )}
-              </div>
-            </Card>
-          )}
+              {hasPolygon && drawingMode !== 'direct_select' && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={enterEditMode}
+                  className="text-xs"
+                >
+                  <Edit3 className="h-3 w-3 mr-1" />
+                  Modifica
+                </Button>
+              )}
+              
+              {drawingMode === 'direct_select' && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={exitEditMode}
+                  className="text-xs"
+                >
+                  <Hand className="h-3 w-3 mr-1" />
+                  Esci da modifica
+                </Button>
+              )}
+
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={startNewPolygon}
+                className="text-xs"
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                Nuovo campo
+              </Button>
+
+              {drawingMode === 'draw_polygon' && pointCount > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={undoLastPoint}
+                  className="text-xs"
+                  disabled
+                >
+                  <Undo2 className="h-3 w-3 mr-1" />
+                  Annulla
+                </Button>
+              )}
+            </div>
+          </Card>
         </div>
 
         {/* Status bar */}
