@@ -23,6 +23,7 @@ export const AddressSearch: React.FC<AddressSearchProps> = ({
   }>>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [isSelectingAddress, setIsSelectingAddress] = useState(false);
   const { toast } = useToast();
 
   const searchAddress = useCallback(async (searchQuery: string) => {
@@ -61,8 +62,15 @@ export const AddressSearch: React.FC<AddressSearchProps> = ({
   }, [mapboxToken]);
 
   useEffect(() => {
+    // Don't search if we're in the process of selecting an address
+    if (isSelectingAddress) {
+      console.log('Skipping search - address selection in progress');
+      return;
+    }
+
     const timeoutId = setTimeout(() => {
       if (query.trim()) {
+        console.log('Triggering search for:', query.trim());
         searchAddress(query.trim());
       } else {
         setSuggestions([]);
@@ -71,12 +79,27 @@ export const AddressSearch: React.FC<AddressSearchProps> = ({
     }, 500);
 
     return () => clearTimeout(timeoutId);
-  }, [query, searchAddress]);
+  }, [query, searchAddress, isSelectingAddress]);
 
   const handleLocationSelect = (suggestion: any) => {
+    console.log('Address selected:', suggestion.place_name);
+    
+    // Set flag to prevent automatic search
+    setIsSelectingAddress(true);
+    
+    // Update query and hide suggestions immediately
     setQuery(suggestion.place_name);
+    setSuggestions([]);
     setShowSuggestions(false);
+    
+    // Call the parent callback
     onLocationSelect(suggestion.center, suggestion.bbox);
+    
+    // Reset flag after a short delay to allow normal searching again
+    setTimeout(() => {
+      setIsSelectingAddress(false);
+      console.log('Address selection completed, re-enabling search');
+    }, 1000);
   };
 
   return (
