@@ -40,9 +40,10 @@ serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { action, polygon, start_date, end_date } = body as {
-      action: "vegetation" | "weather";
-      polygon: PolygonData;
+    const { action, polygon, start_date, end_date, field_id } = body as {
+      action: "vegetation" | "weather" | "summary" | "fields";
+      polygon?: PolygonData;
+      field_id?: string;
       start_date?: string;
       end_date?: string;
     };
@@ -57,11 +58,58 @@ serve(async (req) => {
       });
     }
 
-    if (!polygon || (!polygon.geojson && !polygon.coordinates)) {
+    // For fields action, we don't need polygon
+    if (action !== "fields" && (!polygon || (!polygon.geojson && !polygon.coordinates))) {
       return new Response(JSON.stringify({ error: "Invalid polygon" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // Handle fields list action  
+    if (action === "fields") {
+      const apiKey = Deno.env.get("EOS_DATA_API_KEY");
+      if (!apiKey) {
+        return new Response(
+          JSON.stringify({ error: "Missing EOS API key. Please set EOS_DATA_API_KEY in Supabase secrets." }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      try {
+        // Get list of fields from EOS API
+        const fieldsUrl = `https://api-connect.eos.com/api/gdw/fields?api_key=${apiKey}`;
+        const fieldsResp = await fetch(fieldsUrl);
+        
+        if (!fieldsResp.ok) {
+          const msg = await fieldsResp.text();
+          throw new Error(`Fields list failed: ${fieldsResp.status} ${msg}`);
+        }
+        
+        const fieldsData = await fieldsResp.json();
+        
+        // Transform to our format
+        const fields = Array.isArray(fieldsData) ? fieldsData : (fieldsData.fields || []);
+        const transformedFields = fields.map((field: any) => ({
+          id: field.id || field.field_id,
+          name: field.name || `Field ${field.id}`,
+          area_ha: field.area || field.area_ha || 0,
+          crop_type: field.crop_type || "unknown",
+          coordinates: field.geometry?.coordinates?.[0] || [],
+          geojson: field.geometry ? JSON.stringify(field.geometry) : null
+        }));
+
+        return new Response(
+          JSON.stringify({ fields: transformedFields }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      } catch (error) {
+        console.error("EOS fields error:", error);
+        return new Response(
+          JSON.stringify({ error: "Failed to fetch fields from EOS", details: String(error) }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     }
 
     // NOTE: This function is scaffolded. Replace the demo builders below with real EOS API calls using eosKey/eosStatsBearer.

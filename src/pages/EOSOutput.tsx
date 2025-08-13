@@ -9,6 +9,8 @@ import { BarChart3, ArrowLeft, ThermometerSun, Droplets, Leaf, Activity, Downloa
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { PolygonVisualization } from "@/components/PolygonVisualization";
+import { supabase } from "@/integrations/supabase/client";
 function setMetaTags(title: string, description: string, canonicalPath: string) {
   document.title = title;
   let meta = document.querySelector('meta[name="description"]');
@@ -31,7 +33,9 @@ function setMetaTags(title: string, description: string, canonicalPath: string) 
 const EOSOutput: React.FC = () => {
   const navigate = useNavigate();
   const [polygon, setPolygon] = useState<PolygonData | null>(null);
+  const [selectedField, setSelectedField] = useState<any>(null);
   const [userCfg, setUserCfg] = useState<any>(null);
+  const [mapboxToken, setMapboxToken] = useState<string>("");
 
   const [summary, setSummary] = useState<EosSummary | null>(null);
   const [loading, setLoading] = useState(false);
@@ -70,6 +74,7 @@ const [showDemo, setShowDemo] = useState(false);
 
     try {
       const p = localStorage.getItem("eos_polygon");
+      const f = localStorage.getItem("eos_selected_field");
       const c = localStorage.getItem("eos_user_config");
       if (!p || !c) {
         navigate("/");
@@ -77,6 +82,14 @@ const [showDemo, setShowDemo] = useState(false);
       }
       setPolygon(JSON.parse(p));
       setUserCfg(JSON.parse(c));
+
+      if (f) {
+        try {
+          setSelectedField(JSON.parse(f));
+        } catch (e) {
+          console.warn("Failed to parse selected field");
+        }
+      }
 
       const last = localStorage.getItem("eos_last_summary");
       if (last) {
@@ -90,6 +103,20 @@ const [showDemo, setShowDemo] = useState(false);
           }
         } catch {}
       }
+
+      // Fetch Mapbox token for visualization
+      const fetchMapboxToken = async () => {
+        try {
+          const { data } = await supabase.functions.invoke('mapbox-config');
+          if (data?.mapboxToken) {
+            setMapboxToken(data.mapboxToken);
+          }
+        } catch (error) {
+          console.warn('Failed to fetch Mapbox token for visualization:', error);
+        }
+      };
+      
+      fetchMapboxToken();
     } catch (e) {
       navigate("/");
     }
@@ -209,23 +236,61 @@ const ts = isDemo && showDemo ? demoTs : rawTs;
         </div>
       </header>
 
-      <section className="max-w-6xl mx-auto px-4 py-6 grid lg:grid-cols-3 gap-6">
-        {(usingSaved || noRealObs) && (
-          <div className="lg:col-span-3">
-            <Alert variant={usingSaved ? "default" : "destructive"}>
-              <AlertTitle>{usingSaved ? "Stai visualizzando l'ultimo risultato salvato" : "Nessun risultato trovato nel periodo"}</AlertTitle>
-              <AlertDescription>
-                {usingSaved
-                  ? "Non sono arrivati dati nuovi. Puoi riprovare ora o esportare i dati salvati."
-                  : "Prova ad allargare l'intervallo o a usare filtri più permissivi."}
-              </AlertDescription>
-              <div className="mt-3 flex gap-2">
-                <Button size="sm" variant="secondary" onClick={() => { setUsePermissiveFilters(false); setShowDemo(false); setRefreshKey((k) => k + 1); }}>Riprova</Button>
-                <Button size="sm" onClick={() => { setUsePermissiveFilters(true); setShowDemo(false); setRefreshKey((k) => k + 1); }}>Riprova con filtri estesi</Button>
+      <section className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+        {/* Field Information Header */}
+        {selectedField && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Campo Selezionato: {selectedField.name}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid md:grid-cols-3 gap-4 text-sm">
+                <div>
+                  <span className="text-muted-foreground">Area:</span>
+                  <p className="font-medium">{selectedField.area_ha} ha</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Coltura:</span>
+                  <p className="font-medium">{selectedField.crop_type}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Campo ID:</span>
+                  <p className="font-medium">{selectedField.id}</p>
+                </div>
               </div>
-            </Alert>
-          </div>
+            </CardContent>
+          </Card>
         )}
+
+        {/* Polygon Visualization */}
+        {polygon && mapboxToken && (
+          <PolygonVisualization
+            polygon={polygon}
+            mapboxToken={mapboxToken}
+            title={selectedField ? `Visualizzazione Campo: ${selectedField.name}` : "Campo Analizzato"}
+            description={selectedField ? 
+              `Campo EOS • ${selectedField.crop_type} • ${polygon.area_ha} ha` : 
+              `Poligono personalizzato • ${polygon.area_ha} ha`
+            }
+          />
+        )}
+
+        {(usingSaved || noRealObs) && (
+          <Alert variant={usingSaved ? "default" : "destructive"}>
+            <AlertTitle>{usingSaved ? "Stai visualizzando l'ultimo risultato salvato" : "Nessun risultato trovato nel periodo"}</AlertTitle>
+            <AlertDescription>
+              {usingSaved
+                ? "Non sono arrivati dati nuovi. Puoi riprovare ora o esportare i dati salvati."
+                : "Prova ad allargare l'intervallo o a usare filtri più permissivi."}
+            </AlertDescription>
+            <div className="mt-3 flex gap-2">
+              <Button size="sm" variant="secondary" onClick={() => { setUsePermissiveFilters(false); setShowDemo(false); setRefreshKey((k) => k + 1); }}>Riprova</Button>
+              <Button size="sm" onClick={() => { setUsePermissiveFilters(true); setShowDemo(false); setRefreshKey((k) => k + 1); }}>Riprova con filtri estesi</Button>
+            </div>
+          </Alert>
+        )}
+
+        <div className="grid lg:grid-cols-3 gap-6">
         <aside className="bg-card rounded-xl border border-border p-6">
           <h2 className="text-lg font-semibold text-foreground mb-4">Impostazioni</h2>
           <div className="text-sm text-muted-foreground space-y-1">
@@ -320,6 +385,7 @@ const ts = isDemo && showDemo ? demoTs : rawTs;
             </CardContent>
           </Card>
         </article>
+        </div>
       </section>
 
       {loading && (

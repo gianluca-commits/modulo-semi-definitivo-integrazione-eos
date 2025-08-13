@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Calendar as CalendarIcon, Upload, MapPin, Settings, ArrowRight, AlertTriangle, Loader2 } from "lucide-react";
 import { MapSelector } from "@/components/MapSelector";
+import { FieldSelector } from "@/components/FieldSelector";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -77,6 +78,8 @@ const EOSInput: React.FC = () => {
   // Polygon state
   const [polygonData, setPolygonData] = useState<PolygonData>({ geojson: "", coordinates: [], source: "", area_ha: 0 });
   const [polygonOptions, setPolygonOptions] = useState<{ id: string; label: string; coordinates: [number, number][]; area_ha: number }[]>([]);
+  const [selectedEosField, setSelectedEosField] = useState<any>(null);
+  const [inputMode, setInputMode] = useState<"eos" | "map" | "file">("eos");
   
   // Mapbox token state
   const [mapboxToken, setMapboxToken] = useState<string>("");
@@ -164,6 +167,19 @@ const EOSInput: React.FC = () => {
     );
   }, []);
 
+  // Handle EOS field selection
+  const handleEosFieldSelect = (field: any) => {
+    setSelectedEosField(field);
+    setPolygonData({
+      geojson: field.geojson || JSON.stringify({ type: "Polygon", coordinates: [field.coordinates] }),
+      coordinates: field.coordinates,
+      source: `EOS Field: ${field.name}`,
+      area_ha: field.area_ha
+    });
+    setPolygonOptions([]);
+    setInputMode("eos");
+  };
+
   // Handle polygon selection from map
   const handleMapPolygonSelect = (polygon: {
     type: string;
@@ -179,6 +195,8 @@ const EOSInput: React.FC = () => {
       area_ha: polygon.area
     });
     setPolygonOptions([]);
+    setSelectedEosField(null);
+    setInputMode("map");
     toast({ 
       title: "Campo selezionato", 
       description: `Poligono di ${polygon.area.toFixed(2)} ha dalla mappa` 
@@ -226,6 +244,8 @@ const EOSInput: React.FC = () => {
           .sort((a: any, b: any) => b.area_ha - a.area_ha);
         setPolygonOptions(opts);
         coords = opts[0].coordinates;
+        setSelectedEosField(null);
+        setInputMode("file");
       } else if (lower.endsWith(".geojson") || lower.endsWith(".json") || file.type.includes("json")) {
         const text = await file.text();
         const parsed = JSON.parse(text);
@@ -254,6 +274,8 @@ const EOSInput: React.FC = () => {
           .sort((a: any, b: any) => b.area_ha - a.area_ha);
         setPolygonOptions(opts);
         coords = opts[0].coordinates;
+        setSelectedEosField(null);
+        setInputMode("file");
       } else {
         throw new Error("Formato file non supportato. Usa .kml, .geojson o .json");
       }
@@ -264,6 +286,8 @@ const EOSInput: React.FC = () => {
       const geoJson = { type: "Polygon", coordinates: [coords] };
       const area = calculateAreaHa(coords as any);
       setPolygonData({ geojson: JSON.stringify(geoJson, null, 2), coordinates: coords as any, source: name, area_ha: area });
+      setSelectedEosField(null);
+      setInputMode("file");
       toast({ title: "File caricato", description: `Poligono rilevato da ${name}` });
     } catch (e: any) {
       toast({ title: "Errore file", description: e?.message ?? "Errore nella lettura del file", variant: "destructive" });
@@ -305,7 +329,8 @@ const EOSInput: React.FC = () => {
     const start_date = formatDate(dateRange.from!);
     const end_date = formatDate(dateRange.to!);
 
-    localStorage.setItem("eos_polygon", JSON.stringify(polygonData));
+      localStorage.setItem("eos_polygon", JSON.stringify(polygonData));
+    localStorage.setItem("eos_selected_field", JSON.stringify(selectedEosField));
     localStorage.setItem(
       "eos_user_config",
       JSON.stringify({ cropType: crop, irrigation, fertilization, planting_date: plantingDate, start_date, end_date })
@@ -326,7 +351,15 @@ const EOSInput: React.FC = () => {
       </header>
 
       <section className="max-w-6xl mx-auto px-4 py-8 space-y-6">
-        {/* Step 1: Interactive Map (Primary option) */}
+        {/* Step 1: EOS Field Selection (Primary option) */}
+        <div className="space-y-6">
+          <FieldSelector 
+            onFieldSelect={handleEosFieldSelect} 
+            selectedFieldId={selectedEosField?.id}
+          />
+        </div>
+
+        {/* Step 2: Alternative Input Methods */}
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
             {isLoadingToken ? (
@@ -400,12 +433,16 @@ const EOSInput: React.FC = () => {
                               variant="ghost" 
                               size="sm"
                               className="w-full text-left justify-start"
-                              onClick={() => setPolygonData({ 
-                                geojson: JSON.stringify({ type: "Polygon", coordinates: [opt.coordinates] }, null, 2), 
-                                coordinates: opt.coordinates as any, 
-                                source: polygonData.source || "File", 
-                                area_ha: opt.area_ha 
-                              })}
+                              onClick={() => {
+                                setPolygonData({ 
+                                  geojson: JSON.stringify({ type: "Polygon", coordinates: [opt.coordinates] }, null, 2), 
+                                  coordinates: opt.coordinates as any, 
+                                  source: polygonData.source || "File", 
+                                  area_ha: opt.area_ha 
+                                });
+                                setSelectedEosField(null);
+                                setInputMode("file");
+                              }}
                             >
                               {opt.label} • {opt.area_ha.toFixed(2)} ha
                             </Button>
