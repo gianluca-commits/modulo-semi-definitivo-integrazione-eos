@@ -4,7 +4,7 @@ import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Trash2, Info } from 'lucide-react';
+import { Trash2, Info, Edit3, Undo2, Plus, Hand } from 'lucide-react';
 import { 
   DEFAULT_CENTER, 
   DEFAULT_ZOOM,
@@ -40,6 +40,9 @@ export const PolygonDrawer = React.forwardRef<
   const [area, setArea] = useState<number | null>(null);
   const [isValidPolygon, setIsValidPolygon] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [drawingMode, setDrawingMode] = useState<'draw_polygon' | 'direct_select' | 'simple_select'>('draw_polygon');
+  const [pointCount, setPointCount] = useState(0);
+  const [hasPolygon, setHasPolygon] = useState(false);
   const { toast } = useToast();
   
   // Handle drawing events - defined outside to be accessible for cleanup
@@ -49,10 +52,18 @@ export const PolygonDrawer = React.forwardRef<
     const data = draw.current.getAll();
     const polygons = data.features.filter(f => f.geometry.type === 'Polygon');
 
+    console.log('Drawing event:', { 
+      totalFeatures: data.features.length, 
+      polygons: polygons.length,
+      mode: draw.current.getMode()
+    });
+
     if (polygons.length === 0) {
       setArea(null);
       setIsValidPolygon(false);
       setValidationError(null);
+      setPointCount(0);
+      setHasPolygon(false);
       onPolygonChange(null);
       return;
     }
@@ -72,6 +83,9 @@ export const PolygonDrawer = React.forwardRef<
     const polygon = polygons[polygons.length - 1];
     const geometry = polygon.geometry as any;
     const coordinates = geometry.coordinates[0];
+    
+    setPointCount(coordinates.length - 1); // -1 because last point equals first point
+    setHasPolygon(true);
 
     // Validate polygon
     const validation = validatePolygon(coordinates);
@@ -84,13 +98,6 @@ export const PolygonDrawer = React.forwardRef<
       onPolygonChange(geoJsonPolygon, validation.area);
     } else {
       onPolygonChange(null);
-      if (validation.error) {
-        toast({
-          title: "Poligono non valido",
-          description: validation.error,
-          variant: "destructive"
-        });
-      }
     }
   }, [draw, onPolygonChange, toast]);
   
@@ -112,17 +119,19 @@ export const PolygonDrawer = React.forwardRef<
     if (!map || !isInitialized) return;
     
     try {
+      console.log('Setting up draw controls...');
+      
       // Add navigation controls
       map.addControl(new mapboxgl.NavigationControl(), 'top-right');
       
-      // Initialize drawing tools
+      // Initialize drawing tools with no default controls (we'll add our own)
       draw.current = new MapboxDraw({
         displayControlsDefault: false,
-        controls: {
-          polygon: true,
-          trash: true
-        },
-        defaultMode: 'draw_polygon'
+        controls: {},
+        defaultMode: 'draw_polygon',
+        userProperties: true,
+        clickBuffer: 2,
+        touchBuffer: 25
       });
 
       map.addControl(draw.current, 'top-left');
@@ -131,6 +140,12 @@ export const PolygonDrawer = React.forwardRef<
       map.on('draw.create', handlePolygonUpdate);
       map.on('draw.update', handlePolygonUpdate);
       map.on('draw.delete', handlePolygonUpdate);
+      map.on('draw.modechange', (e: any) => {
+        console.log('Mode changed to:', e.mode);
+        setDrawingMode(e.mode as 'draw_polygon' | 'direct_select' | 'simple_select');
+      });
+      
+      console.log('Draw controls setup complete. Current mode:', draw.current.getMode());
       
     } catch (error) {
       console.error('Error setting up draw controls:', error);
@@ -183,13 +198,57 @@ export const PolygonDrawer = React.forwardRef<
   }));
 
 
+  // Drawing control functions
   const clearPolygon = () => {
     if (draw.current) {
       draw.current.deleteAll();
       setArea(null);
       setIsValidPolygon(false);
       setValidationError(null);
+      setPointCount(0);
+      setHasPolygon(false);
       onPolygonChange(null);
+      setDrawingMode('draw_polygon');
+      draw.current.changeMode('draw_polygon');
+    }
+  };
+
+  const startNewPolygon = () => {
+    clearPolygon();
+  };
+
+  const enterEditMode = () => {
+    if (draw.current && hasPolygon) {
+      const data = draw.current.getAll();
+      if (data.features.length > 0) {
+        const polygonId = data.features[0].id;
+        (draw.current as any).changeMode('direct_select', { featureId: polygonId });
+        setDrawingMode('direct_select');
+        toast({
+          title: "Modalità modifica",
+          description: "Trascina i punti per modificare il poligono",
+          variant: "default"
+        });
+      }
+    }
+  };
+
+  const exitEditMode = () => {
+    if (draw.current) {
+      draw.current.changeMode('simple_select');
+      setDrawingMode('simple_select');
+    }
+  };
+
+  const undoLastPoint = () => {
+    if (draw.current && drawingMode === 'draw_polygon') {
+      // This is a limitation of MapboxDraw - we can't easily undo the last point
+      // during drawing. We could implement a custom drawing mode for this.
+      toast({
+        title: "Annulla ultimo punto",
+        description: "Per ora, usa 'Nuovo Poligono' per ricominciare",
+        variant: "default"
+      });
     }
   };
 
@@ -250,48 +309,123 @@ export const PolygonDrawer = React.forwardRef<
           </div>
         )}
         
-        {/* Info overlay */}
-        <div className="absolute top-4 left-4 right-4 z-10">
+        {/* Drawing toolbar */}
+        <div className="absolute top-4 left-4 right-4 z-10 space-y-2">
+          {/* Info card */}
           <Card className="p-3 bg-background/95 backdrop-blur-sm">
             <div className="flex items-start gap-2">
               <Info className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
               <div className="text-sm">
-                <p className="font-medium mb-1">Come disegnare il campo:</p>
-                <p className="text-muted-foreground">
-                  Clicca sulla mappa per iniziare a disegnare il perimetro del campo. 
-                  Fai doppio click per completare il poligono.
+                <p className="font-medium mb-1">
+                  {drawingMode === 'draw_polygon' && 'Disegna il campo:'}
+                  {drawingMode === 'direct_select' && 'Modifica il poligono:'}
+                  {drawingMode === 'simple_select' && 'Poligono completato:'}
                 </p>
+                <p className="text-muted-foreground">
+                  {drawingMode === 'draw_polygon' && 'Clicca sulla mappa per aggiungere punti. Doppio click per completare.'}
+                  {drawingMode === 'direct_select' && 'Trascina i punti per modificare la forma del campo.'}
+                  {drawingMode === 'simple_select' && 'Usa i controlli qui sotto per modificare o ricreare il campo.'}
+                </p>
+                {pointCount > 0 && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Punti: {pointCount}
+                  </p>
+                )}
               </div>
             </div>
           </Card>
+
+          {/* Control buttons */}
+          {(hasPolygon || drawingMode !== 'draw_polygon') && (
+            <Card className="p-3 bg-background/95 backdrop-blur-sm">
+              <div className="flex flex-wrap gap-2">
+                {hasPolygon && drawingMode !== 'direct_select' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={enterEditMode}
+                    className="text-xs"
+                  >
+                    <Edit3 className="h-3 w-3 mr-1" />
+                    Modifica
+                  </Button>
+                )}
+                
+                {drawingMode === 'direct_select' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={exitEditMode}
+                    className="text-xs"
+                  >
+                    <Hand className="h-3 w-3 mr-1" />
+                    Sposta
+                  </Button>
+                )}
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={startNewPolygon}
+                  className="text-xs"
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  Nuovo
+                </Button>
+
+                {drawingMode === 'draw_polygon' && pointCount > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={undoLastPoint}
+                    className="text-xs"
+                    disabled
+                  >
+                    <Undo2 className="h-3 w-3 mr-1" />
+                    Annulla
+                  </Button>
+                )}
+              </div>
+            </Card>
+          )}
         </div>
 
-        {/* Area display */}
-        {area !== null && (
-          <div className="absolute bottom-4 left-4 z-10">
-            <Badge variant={isValidPolygon ? "default" : "destructive"} className="text-sm">
-              Area: {area.toFixed(2)} ha
-              {!isValidPolygon && validationError && (
-                <span className="ml-2">• {validationError}</span>
-              )}
-            </Badge>
-          </div>
-        )}
+        {/* Status bar */}
+        <div className="absolute bottom-4 left-4 right-4 z-10">
+          <div className="flex items-center justify-between gap-2">
+            {/* Area display */}
+            {area !== null && (
+              <Badge variant={isValidPolygon ? "default" : "destructive"} className="text-sm">
+                Area: {area.toFixed(2)} ha
+                {!isValidPolygon && validationError && (
+                  <span className="ml-2">• {validationError}</span>
+                )}
+              </Badge>
+            )}
 
-        {/* Clear button */}
-        {area !== null && (
-          <div className="absolute bottom-4 right-4 z-10">
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={clearPolygon}
-              className="shadow-lg"
-            >
-              <Trash2 className="h-4 w-4 mr-1" />
-              Cancella
-            </Button>
+            {/* Drawing mode indicator */}
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="text-xs">
+                {drawingMode === 'draw_polygon' && 'Disegno'}
+                {drawingMode === 'direct_select' && 'Modifica'}
+                {drawingMode === 'simple_select' && 'Seleziona'}
+              </Badge>
+
+              {/* Clear button */}
+              {hasPolygon && (
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={clearPolygon}
+                  className="shadow-lg"
+                >
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  Cancella
+                </Button>
+              )}
+            </div>
           </div>
-        )}
+        </div>
       </Card>
 
       {!mapboxToken && (
