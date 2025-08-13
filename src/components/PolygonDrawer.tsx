@@ -37,7 +37,7 @@ export const PolygonDrawer = React.forwardRef<{
   const [drawingMode, setDrawingMode] = useState<'draw_polygon' | 'direct_select' | 'simple_select'>('draw_polygon');
   const [pointCount, setPointCount] = useState(0);
   const [hasPolygon, setHasPolygon] = useState(false);
-  const [showCustomControls, setShowCustomControls] = useState(false);
+  const [showCustomControls, setShowCustomControls] = useState(true); // Always show custom controls
   const {
     toast
   } = useToast();
@@ -134,8 +134,9 @@ export const PolygonDrawer = React.forwardRef<{
         map.addControl(draw.current, 'top-left');
         console.log('MapboxDraw control added to map (no native controls)');
 
-        // Always show custom controls since we disabled native ones
+        // Force custom controls to be always visible
         setShowCustomControls(true);
+        console.log('✅ Custom controls forced to visible state');
 
         // Add event listeners
         map.on('draw.create', handlePolygonUpdate);

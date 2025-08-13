@@ -170,11 +170,14 @@ const EOSInput: React.FC = () => {
     });
     setPolygonOptions([]);
     setInputMode("map");
-    toast({ 
+    
+    // Use toast without dependency to avoid re-renders
+    const toastConfig = { 
       title: "Campo selezionato", 
       description: `Poligono di ${polygon.area.toFixed(2)} ha dalla mappa` 
-    });
-  }, [toast]);
+    };
+    toast(toastConfig);
+  }, []); // Empty dependency array to prevent re-renders
 
   const handleFileUpload = async (file: File) => {
     try {
