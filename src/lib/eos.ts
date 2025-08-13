@@ -10,14 +10,6 @@ export interface PolygonData {
   area_ha: number;
 }
 
-export interface EosField {
-  id: string;
-  name: string;
-  area_ha: number;
-  crop_type: string;
-  coordinates: Coordinate[];
-  geojson: string | null;
-}
 
 export interface EosConfig {
   apiKey: string;
@@ -150,24 +142,6 @@ export function computeProductivity(cropType: EosConfig["cropType"]): Productivi
   };
 }
 
-// Get available EOS fields
-export async function getEosFields(): Promise<EosField[]> {
-  const { data, error } = await supabase.functions.invoke("eos-proxy", {
-    body: { action: "fields" }
-  });
-
-  if (error) {
-    console.error("eos-proxy fields error:", error);
-    throw new Error(`Failed to fetch EOS fields: ${error.message}`);
-  }
-
-  if (!data?.fields) {
-    console.warn("eos-proxy fields invalid response", data);
-    return [];
-  }
-
-  return data.fields as EosField[];
-}
 
 // Placeholder for real EOS API calls. For security, route real requests via a Supabase Edge Function.
 export async function getVegetationTimeSeries(

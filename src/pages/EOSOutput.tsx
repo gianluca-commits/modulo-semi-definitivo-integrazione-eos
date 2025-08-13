@@ -33,7 +33,7 @@ function setMetaTags(title: string, description: string, canonicalPath: string) 
 const EOSOutput: React.FC = () => {
   const navigate = useNavigate();
   const [polygon, setPolygon] = useState<PolygonData | null>(null);
-  const [selectedField, setSelectedField] = useState<any>(null);
+  
   const [userCfg, setUserCfg] = useState<any>(null);
   const [mapboxToken, setMapboxToken] = useState<string>("");
 
@@ -74,7 +74,6 @@ const [showDemo, setShowDemo] = useState(false);
 
     try {
       const p = localStorage.getItem("eos_polygon");
-      const f = localStorage.getItem("eos_selected_field");
       const c = localStorage.getItem("eos_user_config");
       if (!p || !c) {
         navigate("/");
@@ -82,14 +81,6 @@ const [showDemo, setShowDemo] = useState(false);
       }
       setPolygon(JSON.parse(p));
       setUserCfg(JSON.parse(c));
-
-      if (f) {
-        try {
-          setSelectedField(JSON.parse(f));
-        } catch (e) {
-          console.warn("Failed to parse selected field");
-        }
-      }
 
       const last = localStorage.getItem("eos_last_summary");
       if (last) {
@@ -238,40 +229,35 @@ const ts = isDemo && showDemo ? demoTs : rawTs;
 
       <section className="max-w-6xl mx-auto px-4 py-6 space-y-6">
         {/* Field Information Header */}
-        {selectedField && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Campo Selezionato: {selectedField.name}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid md:grid-cols-3 gap-4 text-sm">
-                <div>
-                  <span className="text-muted-foreground">Area:</span>
-                  <p className="font-medium">{selectedField.area_ha} ha</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Coltura:</span>
-                  <p className="font-medium">{selectedField.crop_type}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Campo ID:</span>
-                  <p className="font-medium">{selectedField.id}</p>
-                </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Campo Analizzato</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid md:grid-cols-3 gap-4 text-sm">
+              <div>
+                <span className="text-muted-foreground">Area:</span>
+                <p className="font-medium">{polygon.area_ha} ha</p>
               </div>
-            </CardContent>
-          </Card>
-        )}
+              <div>
+                <span className="text-muted-foreground">Fonte:</span>
+                <p className="font-medium">{polygon.source}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Coltura:</span>
+                <p className="font-medium">{userCfg.cropType}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Polygon Visualization */}
         {polygon && mapboxToken && (
           <PolygonVisualization
             polygon={polygon}
             mapboxToken={mapboxToken}
-            title={selectedField ? `Visualizzazione Campo: ${selectedField.name}` : "Campo Analizzato"}
-            description={selectedField ? 
-              `Campo EOS • ${selectedField.crop_type} • ${polygon.area_ha} ha` : 
-              `Poligono personalizzato • ${polygon.area_ha} ha`
-            }
+            title="Campo Analizzato"
+            description={`${polygon.source} • ${userCfg.cropType} • ${polygon.area_ha} ha`}
           />
         )}
 
