@@ -134,23 +134,19 @@ export const PolygonDrawer = React.forwardRef<{
           clickBuffer: 2,
           touchBuffer: 25
         });
-        
         map.addControl(draw.current, 'top-left');
         console.log('MapboxDraw control added to map');
-        
+
         // Enhanced control visibility with multiple strategies
         const ensureVisibility = () => {
           const maxAttempts = 10;
           let attempts = 0;
-          
           const checkAndFix = () => {
             attempts++;
             const drawControls = document.querySelector('.mapboxgl-ctrl-group');
             const drawButtons = document.querySelectorAll('.mapbox-gl-draw_ctrl-draw-btn');
-            
             console.log(`Attempt ${attempts}: Draw controls found:`, drawControls ? 'YES' : 'NO');
             console.log(`Attempt ${attempts}: Draw buttons found:`, drawButtons.length);
-            
             if (drawControls && drawButtons.length > 0) {
               // Force visibility with stronger CSS
               const controlElement = drawControls as HTMLElement;
@@ -167,7 +163,6 @@ export const PolygonDrawer = React.forwardRef<{
                 top: 10px !important;
                 left: 10px !important;
               `;
-              
               drawButtons.forEach((btn, index) => {
                 const buttonElement = btn as HTMLElement;
                 buttonElement.style.cssText = `
@@ -184,12 +179,10 @@ export const PolygonDrawer = React.forwardRef<{
                 `;
                 console.log(`Button ${index} styled successfully`);
               });
-              
               console.log('✅ Draw controls visibility ensured');
               setShowCustomControls(false); // Hide custom controls if native ones work
               return true;
             }
-            
             if (attempts < maxAttempts) {
               setTimeout(checkAndFix, 200);
             } else {
@@ -199,14 +192,14 @@ export const PolygonDrawer = React.forwardRef<{
             }
             return false;
           };
-          
+
           // Start checking immediately
           checkAndFix();
         };
-        
+
         // Start visibility checks after a short delay
         setTimeout(ensureVisibility, 100);
-        
+
         // Add event listeners
         map.on('draw.create', handlePolygonUpdate);
         map.on('draw.update', handlePolygonUpdate);
@@ -215,17 +208,15 @@ export const PolygonDrawer = React.forwardRef<{
           console.log('Mode changed to:', e.mode);
           setDrawingMode(e.mode as 'draw_polygon' | 'direct_select' | 'simple_select');
         });
-        
         console.log('✅ Draw controls setup complete. Current mode:', draw.current.getMode());
       };
-      
+
       // Wait for map to be completely ready
       if (map.loaded()) {
         addDrawControls();
       } else {
         map.on('load', addDrawControls);
       }
-      
     } catch (error) {
       console.error('❌ Error setting up draw controls:', error);
     }
@@ -326,7 +317,6 @@ export const PolygonDrawer = React.forwardRef<{
   const handleCustomModeChange = useCallback((mode: string) => {
     setDrawingMode(mode as 'draw_polygon' | 'direct_select' | 'simple_select');
   }, []);
-
   const retryMapLoad = () => {
     // Clean up draw controls first
     if (draw.current && map) {
@@ -376,87 +366,10 @@ export const PolygonDrawer = React.forwardRef<{
           </div>}
         
         {/* Custom draw controls as fallback */}
-        {showCustomControls && (
-          <CustomDrawControls
-            draw={draw.current}
-            currentMode={drawingMode}
-            onModeChange={handleCustomModeChange}
-          />
-        )}
+        {showCustomControls && <CustomDrawControls draw={draw.current} currentMode={drawingMode} onModeChange={handleCustomModeChange} />}
 
         {/* Drawing instructions and status */}
-        <div className="absolute top-4 left-20 right-4 z-10 space-y-2">
-          {/* Instructions card */}
-          {!hasPolygon && (
-            <Card className="p-3 bg-background/95 backdrop-blur-sm border-primary/20">
-              <div className="flex items-center gap-2 text-sm">
-                <div className="bg-primary/10 p-1 rounded">
-                  <Plus className="h-3 w-3 text-primary" />
-                </div>
-                <span className="font-medium text-primary">
-                  Clicca sulla mappa per iniziare a disegnare il campo
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-1 ml-6">
-                Usa il pulsante del poligono nella barra di controllo sulla sinistra
-              </p>
-            </Card>
-          )}
-
-          {/* Drawing in progress */}
-          {drawingMode === 'draw_polygon' && pointCount > 0 && (
-            <Card className="p-3 bg-background/95 backdrop-blur-sm border-orange-500/20">
-              <div className="flex items-center gap-2 text-sm">
-                <div className="bg-orange-100 p-1 rounded">
-                  <Edit3 className="h-3 w-3 text-orange-600" />
-                </div>
-                <span className="font-medium text-orange-600">
-                  Disegno in corso: {pointCount} punti
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-1 ml-6">
-                Fai doppio clic per completare il poligono
-              </p>
-            </Card>
-          )}
-
-          {/* Control buttons */}
-          {hasPolygon && (
-            <div className="flex gap-2">
-              <Button 
-                onClick={startNewPolygon} 
-                size="sm" 
-                variant="outline"
-                className="bg-background/95 backdrop-blur-sm"
-              >
-                <Plus className="h-4 w-4 mr-1" />
-                Nuovo Campo
-              </Button>
-              
-              {drawingMode !== 'direct_select' ? (
-                <Button 
-                  onClick={enterEditMode} 
-                  size="sm" 
-                  variant="outline"
-                  className="bg-background/95 backdrop-blur-sm"
-                >
-                  <Edit3 className="h-4 w-4 mr-1" />
-                  Modifica
-                </Button>
-              ) : (
-                <Button 
-                  onClick={exitEditMode} 
-                  size="sm" 
-                  variant="outline"
-                  className="bg-background/95 backdrop-blur-sm"
-                >
-                  <Hand className="h-4 w-4 mr-1" />
-                  Seleziona
-                </Button>
-              )}
-            </div>
-          )}
-        </div>
+        
 
       </Card>
 
