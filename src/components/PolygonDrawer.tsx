@@ -134,14 +134,36 @@ export const PolygonDrawer = React.forwardRef<{
       
       console.log('Draw controls added to map. Checking if visible...');
       
-      // Check if controls are in DOM
-      setTimeout(() => {
+      // Enhanced control visibility checking with multiple attempts
+      const checkControls = () => {
         const drawControls = document.querySelector('.mapboxgl-ctrl-group');
+        const drawButtons = document.querySelectorAll('.mapbox-gl-draw_ctrl-draw-btn');
         console.log('Draw controls in DOM:', drawControls ? 'YES' : 'NO');
+        console.log('Draw buttons found:', drawButtons.length);
+        
         if (drawControls) {
           console.log('Draw controls styles:', window.getComputedStyle(drawControls));
+          // Force visibility
+          (drawControls as HTMLElement).style.display = 'flex';
+          (drawControls as HTMLElement).style.visibility = 'visible';
+          (drawControls as HTMLElement).style.opacity = '1';
+          (drawControls as HTMLElement).style.flexDirection = 'column';
         }
-      }, 100);
+        
+        drawButtons.forEach((btn, index) => {
+          console.log(`Button ${index} styles:`, window.getComputedStyle(btn));
+          (btn as HTMLElement).style.display = 'block';
+          (btn as HTMLElement).style.visibility = 'visible';
+          (btn as HTMLElement).style.opacity = '1';
+          (btn as HTMLElement).style.width = '30px';
+          (btn as HTMLElement).style.height = '30px';
+        });
+      };
+      
+      // Check immediately and after delays
+      setTimeout(checkControls, 100);
+      setTimeout(checkControls, 500);
+      setTimeout(checkControls, 1000);
 
       // Add event listeners
       map.on('draw.create', handlePolygonUpdate);

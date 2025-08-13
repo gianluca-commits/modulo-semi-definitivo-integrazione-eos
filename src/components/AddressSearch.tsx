@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Search, MapPin, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -23,7 +23,7 @@ export const AddressSearch: React.FC<AddressSearchProps> = ({
   }>>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [isSelectingAddress, setIsSelectingAddress] = useState(false);
+  const isSelectingRef = useRef(false);
   const { toast } = useToast();
 
   const searchAddress = useCallback(async (searchQuery: string) => {
@@ -59,11 +59,11 @@ export const AddressSearch: React.FC<AddressSearchProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [mapboxToken]);
+  }, [mapboxToken, toast]);
 
   useEffect(() => {
     // Don't search if we're in the process of selecting an address
-    if (isSelectingAddress) {
+    if (isSelectingRef.current) {
       console.log('Skipping search - address selection in progress');
       return;
     }
@@ -79,13 +79,13 @@ export const AddressSearch: React.FC<AddressSearchProps> = ({
     }, 500);
 
     return () => clearTimeout(timeoutId);
-  }, [query, searchAddress, isSelectingAddress]);
+  }, [query, searchAddress]);
 
   const handleLocationSelect = (suggestion: any) => {
     console.log('Address selected:', suggestion.place_name);
     
     // Set flag to prevent automatic search
-    setIsSelectingAddress(true);
+    isSelectingRef.current = true;
     
     // Update query and hide suggestions immediately
     setQuery(suggestion.place_name);
@@ -97,7 +97,7 @@ export const AddressSearch: React.FC<AddressSearchProps> = ({
     
     // Reset flag after a longer delay to prevent search retriggering
     setTimeout(() => {
-      setIsSelectingAddress(false);
+      isSelectingRef.current = false;
       console.log('Address selection completed, re-enabling search');
     }, 2000);
   };
@@ -114,7 +114,7 @@ export const AddressSearch: React.FC<AddressSearchProps> = ({
           className="pl-10 pr-10"
           onBlur={() => setTimeout(() => setShowSuggestions(false), 300)}
           onFocus={() => {
-            if (suggestions.length > 0) {
+            if (suggestions.length > 0 && !isSelectingRef.current) {
               setShowSuggestions(true);
             }
           }}

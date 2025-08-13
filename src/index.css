@@ -112,14 +112,30 @@ All colors MUST be HSL.
 .mapboxgl-ctrl-group {
   visibility: visible !important;
   opacity: 1 !important;
-  display: block !important;
+  display: flex !important;
+  flex-direction: column !important;
+  background: white !important;
+  border-radius: 4px !important;
+  box-shadow: 0 0 10px 2px rgba(0,0,0,.1) !important;
 }
 
 .mapbox-gl-draw_ctrl-draw-btn {
   visibility: visible !important;
   opacity: 1 !important;
   display: block !important;
+  background: white !important;
+  border: 1px solid #ddd !important;
+  width: 30px !important;
+  height: 30px !important;
+  cursor: pointer !important;
 }
+
+.mapbox-gl-draw_ctrl-draw-btn:hover {
+  background-color: #f0f0f0 !important;
+}
+
+/* Force MapboxDraw CSS to load */
+@import url('https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.css');
 
 /* Print styles */
 @media print {
