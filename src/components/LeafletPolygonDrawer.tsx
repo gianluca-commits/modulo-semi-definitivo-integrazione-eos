@@ -188,9 +188,7 @@ const LeafletPolygonDrawer = forwardRef<PolygonDrawerRef, PolygonDrawerProps>(
                 ref={(ref) => {
                   featureGroupRef.current = ref;
                 }}
-              >
-                {/* Drawing controls will be added programmatically */}
-              </FeatureGroup>
+              />
               <MapController />
             </MapContainer>
           </div>
