@@ -86,27 +86,47 @@ const EOSInput: React.FC = () => {
   useEffect(() => {
     const fetchMapboxToken = async () => {
       try {
+        console.log('Fetching Mapbox token...');
         const { data, error } = await supabase.functions.invoke('mapbox-config');
         
+        console.log('Mapbox config response:', { data, error });
+        
         if (error) {
-          console.error('Error fetching Mapbox token:', error);
+          console.error('Supabase function error:', error);
           toast({
             title: "Errore configurazione mappa",
-            description: "Impossibile caricare la configurazione della mappa",
+            description: `Errore: ${error.message || 'Impossibile caricare la configurazione della mappa'}`,
             variant: "destructive"
           });
         } else if (data?.mapboxToken) {
+          console.log('Mapbox token received successfully');
           setMapboxToken(data.mapboxToken);
+          toast({
+            title: "Mappa configurata",
+            description: "Configurazione mappa caricata con successo",
+          });
+        } else {
+          console.warn('No mapbox token in response:', data);
+          toast({
+            title: "Token Mapbox mancante",
+            description: "Il token Mapbox non è stato configurato correttamente",
+            variant: "destructive"
+          });
         }
       } catch (error) {
         console.error('Error calling mapbox-config function:', error);
+        toast({
+          title: "Errore di rete",
+          description: `Errore di connessione: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`,
+          variant: "destructive"
+        });
       } finally {
         setIsLoadingToken(false);
       }
     };
 
     fetchMapboxToken();
-  }, []);
+  }, [toast]);
 
   // Intelligent date range calculation
   const intelligentDateRange = useMemo(() => {
