@@ -435,12 +435,9 @@ const EOSInput: React.FC = () => {
                     </Card>
                   )}
                   
-                  {!isLoadingToken && (mapboxToken || manualToken) && (
-                    <MapSelector
-                      onPolygonSelect={handleMapPolygonSelect}
-                      mapboxToken={mapboxToken || manualToken}
-                    />
-                  )}
+                  <MapSelector
+                    onPolygonSelect={handleMapPolygonSelect}
+                  />
                 </>
               )}
 

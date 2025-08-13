@@ -1,11 +1,12 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Map, AlertCircle, MapPin, Mouse } from 'lucide-react';
-import { AddressSearch } from './AddressSearch';
-import LeafletPolygonDrawer from './LeafletPolygonDrawer';
+import { GoogleAddressSearch } from './GoogleAddressSearch';
+import GoogleMapsPolygonDrawer from './GoogleMapsPolygonDrawer';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { supabase } from '@/integrations/supabase/client';
 
 interface MapSelectorProps {
   onPolygonSelect: (polygon: {
@@ -14,19 +15,39 @@ interface MapSelectorProps {
     source: string;
     area: number;
   }) => void;
-  mapboxToken?: string;
 }
 
 export const MapSelector: React.FC<MapSelectorProps> = ({ 
-  onPolygonSelect,
-  mapboxToken 
+  onPolygonSelect
 }) => {
   const [selectedPolygon, setSelectedPolygon] = useState<{
     type: string;
     coordinates: number[][][];
   } | null>(null);
   const [area, setArea] = useState<number | null>(null);
+  const [googleMapsApiKey, setGoogleMapsApiKey] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const polygonDrawerRef = useRef<{ flyToLocation: (center: [number, number], bbox?: [number, number, number, number]) => void } | null>(null);
+
+  useEffect(() => {
+    const fetchGoogleMapsConfig = async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('google-maps-config');
+        
+        if (error) {
+          console.error('Error fetching Google Maps config:', error);
+        } else if (data?.googleMapsApiKey) {
+          setGoogleMapsApiKey(data.googleMapsApiKey);
+        }
+      } catch (error) {
+        console.error('Error calling google-maps-config function:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchGoogleMapsConfig();
+  }, []);
 
   const handleLocationSelect = (center: [number, number], bbox?: [number, number, number, number]) => {
     // Fly to the selected location on the map
@@ -55,7 +76,7 @@ export const MapSelector: React.FC<MapSelectorProps> = ({
     }
   };
 
-  const needsMapboxToken = !mapboxToken;
+  const needsGoogleMapsToken = !googleMapsApiKey;
 
   return (
     <div className="space-y-4">
@@ -87,15 +108,22 @@ export const MapSelector: React.FC<MapSelectorProps> = ({
         </CardContent>
       </Card>
 
-      {needsMapboxToken ? (
+      {loading ? (
         <Alert>
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            Token Mapbox non disponibile. Usa l'opzione "File" per caricare un file KML/GeoJSON invece.
+            Caricamento configurazione mappe...
+          </AlertDescription>
+        </Alert>
+      ) : needsGoogleMapsToken ? (
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            Google Maps API non disponibile. Usa l'opzione "File" per caricare un file KML/GeoJSON invece.
             <br />
             <Button variant="link" className="h-auto p-0 text-sm" asChild>
-              <a href="https://docs.mapbox.com/help/how-mapbox-works/access-tokens/" target="_blank" rel="noopener noreferrer">
-                Come ottenere un token Mapbox gratuito →
+              <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">
+                Come ottenere una chiave API Google Maps gratuita →
               </a>
             </Button>
           </AlertDescription>
@@ -104,18 +132,18 @@ export const MapSelector: React.FC<MapSelectorProps> = ({
         <>
           {/* Address Search */}
           <div className="space-y-2">
-            <AddressSearch 
+            <GoogleAddressSearch 
               onLocationSelect={handleLocationSelect}
-              mapboxToken={mapboxToken}
+              googleMapsApiKey={googleMapsApiKey}
             />
           </div>
 
           {/* Map and Status */}
           <div className="space-y-2">
-        <LeafletPolygonDrawer
-          ref={polygonDrawerRef}
-          onPolygonChange={handlePolygonChange}
-        />
+            <GoogleMapsPolygonDrawer
+              ref={polygonDrawerRef}
+              onPolygonChange={handlePolygonChange}
+            />
             
             {/* Status Bar */}
             {selectedPolygon && area && (
