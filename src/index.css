@@ -103,3 +103,11 @@ All colors MUST be HSL.
     @apply bg-background text-foreground;
   }
 }
+
+/* Print styles */
+@media print {
+  @page { margin: 12mm; }
+  body { background: white; }
+  header, nav, .no-print { display: none !important; }
+  main { padding: 0 !important; }
+}

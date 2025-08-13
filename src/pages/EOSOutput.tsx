@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EosSummary, computeProductivity, getEosSummary, type PolygonData, type EosConfig } from "@/lib/eos";
 import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { BarChart3, ArrowLeft, ThermometerSun, Droplets, Leaf, Activity } from "lucide-react";
-
+import { BarChart3, ArrowLeft, ThermometerSun, Droplets, Leaf, Activity, Download } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 function setMetaTags(title: string, description: string, canonicalPath: string) {
   document.title = title;
   let meta = document.querySelector('meta[name="description"]');
@@ -33,6 +34,15 @@ const EOSOutput: React.FC = () => {
 
   const [summary, setSummary] = useState<EosSummary | null>(null);
   const [loading, setLoading] = useState(false);
+  const [usingSaved, setUsingSaved] = useState(false);
+  const [savedBundle, setSavedBundle] = useState<{
+    polygon: PolygonData;
+    userCfg: any;
+    summary: EosSummary;
+    exported_at: string;
+  } | null>(null);
+  const [usePermissiveFilters, setUsePermissiveFilters] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const eosConfig: EosConfig | null = useMemo(() => {
     if (!userCfg) return null;
@@ -42,12 +52,12 @@ const EOSOutput: React.FC = () => {
       planting_date: userCfg.planting_date,
       start_date: userCfg.start_date,
       end_date: userCfg.end_date,
-      max_cloud_cover_in_aoi: 30,
-      exclude_cover_pixels: true,
-      cloud_masking_level: 2,
+      max_cloud_cover_in_aoi: usePermissiveFilters ? 70 : 30,
+      exclude_cover_pixels: usePermissiveFilters ? false : true,
+      cloud_masking_level: usePermissiveFilters ? 0 : 2,
     };
     return cfg;
-  }, [userCfg]);
+  }, [userCfg, usePermissiveFilters]);
 
   useEffect(() => {
     setMetaTags(
@@ -65,6 +75,16 @@ const EOSOutput: React.FC = () => {
       }
       setPolygon(JSON.parse(p));
       setUserCfg(JSON.parse(c));
+
+      const last = localStorage.getItem("eos_last_summary");
+      if (last) {
+        try {
+          const parsed = JSON.parse(last);
+          if (parsed?.summary) {
+            setSavedBundle(parsed);
+          }
+        } catch {}
+      }
     } catch (e) {
       navigate("/");
     }
@@ -77,21 +97,76 @@ const EOSOutput: React.FC = () => {
       try {
         const sumRes = await getEosSummary(polygon, eosConfig);
         setSummary(sumRes);
+        setUsingSaved(false);
+        // Persist last successful result for offline/fallback exports
+        try {
+          localStorage.setItem(
+            "eos_last_summary",
+            JSON.stringify({ polygon, userCfg, summary: sumRes, exported_at: new Date().toISOString() })
+          );
+        } catch {}
         toast({ title: "Analisi completata", description: "Dati aggiornati con successo." });
       } catch (e: any) {
-        toast({ title: "Errore analisi", description: e?.message ?? "Errore sconosciuto", variant: "destructive" });
+        if (savedBundle?.summary) {
+          setSummary(savedBundle.summary);
+          setUsingSaved(true);
+          toast({ title: "Nessun dato nuovo", description: "Mostro l'ultimo risultato salvato.", variant: "default" });
+        } else {
+          toast({ title: "Errore analisi", description: e?.message ?? "Errore sconosciuto", variant: "destructive" });
+        }
       } finally {
         setLoading(false);
       }
     };
     run();
-  }, [polygon, eosConfig]);
+  }, [polygon, eosConfig, refreshKey, savedBundle, userCfg]);
 
   const productivity = useMemo(() => computeProductivity(userCfg?.cropType || "sunflower"), [userCfg?.cropType]);
 
   if (!polygon || !userCfg) return null;
 
   const ts = (summary?.ndvi_series as any) || [];
+  const noObs = (!ts.length) || (summary?.meta?.observation_count === 0);
+
+  const fileSafe = (s: string) => (s || "").replace(/[^a-z0-9-_]+/gi, "_").toLowerCase();
+
+  const handleExportJSON = () => {
+    if (!summary) {
+      toast({ title: "Nessun dato da esportare", variant: "destructive" });
+      return;
+    }
+    const payload = {
+      polygon,
+      userCfg,
+      summary,
+      exported_at: new Date().toISOString(),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `eos_analisi_${fileSafe(userCfg?.cropType || "campo")}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const handleExportCSV = () => {
+    if (!ts.length) {
+      toast({ title: "Serie NDVI vuota", description: "Nessun dato da esportare.", variant: "destructive" });
+      return;
+    }
+    const rows = [["date", "NDVI", "NDMI"], ...ts.map((p: any) => [p.date, p.NDVI, p.NDMI])];
+    const csv = rows.map((r) => r.join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `ndvi_series_${fileSafe(userCfg?.cropType || "campo")}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
 
   return (
     <main className="min-h-screen bg-background">
@@ -102,12 +177,41 @@ const EOSOutput: React.FC = () => {
             <h1 className="text-2xl font-bold text-foreground">Risultati analisi</h1>
           </div>
           <div className="flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button>
+                  Esporta
+                  <Download className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handlePrint()}>PDF (stampa)</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExportJSON()}>JSON</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExportCSV()} disabled={!ts.length}>CSV NDVI</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button variant="secondary" onClick={() => navigate("/")}>Nuova analisi</Button>
           </div>
         </div>
       </header>
 
       <section className="max-w-6xl mx-auto px-4 py-6 grid lg:grid-cols-3 gap-6">
+        {(usingSaved || noObs) && (
+          <div className="lg:col-span-3">
+            <Alert variant={usingSaved ? "default" : "destructive"}>
+              <AlertTitle>{usingSaved ? "Stai visualizzando l'ultimo risultato salvato" : "Nessun risultato trovato nel periodo"}</AlertTitle>
+              <AlertDescription>
+                {usingSaved
+                  ? "Non sono arrivati dati nuovi. Puoi riprovare ora o esportare i dati salvati."
+                  : "Prova ad allargare l'intervallo o a usare filtri più permissivi."}
+              </AlertDescription>
+              <div className="mt-3 flex gap-2">
+                <Button size="sm" variant="secondary" onClick={() => { setUsePermissiveFilters(false); setRefreshKey((k) => k + 1); }}>Riprova</Button>
+                <Button size="sm" onClick={() => { setUsePermissiveFilters(true); setRefreshKey((k) => k + 1); }}>Riprova con filtri estesi</Button>
+              </div>
+            </Alert>
+          </div>
+        )}
         <aside className="bg-card rounded-xl border border-border p-6">
           <h2 className="text-lg font-semibold text-foreground mb-4">Impostazioni</h2>
           <div className="text-sm text-muted-foreground space-y-1">
