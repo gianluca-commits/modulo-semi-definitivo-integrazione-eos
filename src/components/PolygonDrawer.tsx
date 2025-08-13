@@ -122,83 +122,20 @@ export const PolygonDrawer = React.forwardRef<{
 
       // Wait for the map to be fully loaded before adding draw controls
       const addDrawControls = () => {
-        // Initialize drawing tools with enhanced configuration
+        // Initialize drawing tools with NO native controls
         draw.current = new MapboxDraw({
           displayControlsDefault: false,
-          controls: {
-            polygon: true,
-            trash: true
-          },
+          controls: {},
           defaultMode: 'draw_polygon',
           userProperties: true,
           clickBuffer: 2,
           touchBuffer: 25
         });
         map.addControl(draw.current, 'top-left');
-        console.log('MapboxDraw control added to map');
+        console.log('MapboxDraw control added to map (no native controls)');
 
-        // Enhanced control visibility with multiple strategies
-        const ensureVisibility = () => {
-          const maxAttempts = 10;
-          let attempts = 0;
-          const checkAndFix = () => {
-            attempts++;
-            const drawControls = document.querySelector('.mapboxgl-ctrl-group');
-            const drawButtons = document.querySelectorAll('.mapbox-gl-draw_ctrl-draw-btn');
-            console.log(`Attempt ${attempts}: Draw controls found:`, drawControls ? 'YES' : 'NO');
-            console.log(`Attempt ${attempts}: Draw buttons found:`, drawButtons.length);
-            if (drawControls && drawButtons.length > 0) {
-              // Force visibility with stronger CSS
-              const controlElement = drawControls as HTMLElement;
-              controlElement.style.cssText = `
-                display: flex !important;
-                visibility: visible !important;
-                opacity: 1 !important;
-                flex-direction: column !important;
-                position: absolute !important;
-                z-index: 1000 !important;
-                background: white !important;
-                border-radius: 4px !important;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
-                top: 10px !important;
-                left: 10px !important;
-              `;
-              drawButtons.forEach((btn, index) => {
-                const buttonElement = btn as HTMLElement;
-                buttonElement.style.cssText = `
-                  display: block !important;
-                  visibility: visible !important;
-                  opacity: 1 !important;
-                  width: 30px !important;
-                  height: 30px !important;
-                  border: none !important;
-                  border-bottom: 1px solid #ddd !important;
-                  background: white !important;
-                  cursor: pointer !important;
-                  position: relative !important;
-                `;
-                console.log(`Button ${index} styled successfully`);
-              });
-              console.log('✅ Draw controls visibility ensured');
-              setShowCustomControls(false); // Hide custom controls if native ones work
-              return true;
-            }
-            if (attempts < maxAttempts) {
-              setTimeout(checkAndFix, 200);
-            } else {
-              console.warn('❌ Could not ensure draw controls visibility after', maxAttempts, 'attempts');
-              console.log('🔄 Falling back to custom controls');
-              setShowCustomControls(true); // Show custom controls as fallback
-            }
-            return false;
-          };
-
-          // Start checking immediately
-          checkAndFix();
-        };
-
-        // Start visibility checks after a short delay
-        setTimeout(ensureVisibility, 100);
+        // Always show custom controls since we disabled native ones
+        setShowCustomControls(true);
 
         // Add event listeners
         map.on('draw.create', handlePolygonUpdate);
