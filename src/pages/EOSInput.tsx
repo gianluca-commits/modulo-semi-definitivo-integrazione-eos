@@ -7,11 +7,12 @@ import { calculateAreaHa, type PolygonData } from "@/lib/eos";
 import { kml as kmlToGeoJSON } from "@tmcw/togeojson";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Calendar as CalendarIcon, Upload, MapPin, Settings, ArrowRight, AlertTriangle } from "lucide-react";
+import { Calendar as CalendarIcon, Upload, MapPin, Settings, ArrowRight, AlertTriangle, Loader2 } from "lucide-react";
 import { MapSelector } from "@/components/MapSelector";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { supabase } from "@/integrations/supabase/client";
 
 // Top 10 colture in Italia (indicative)
 const TOP_CROPS = [
@@ -77,8 +78,35 @@ const EOSInput: React.FC = () => {
   const [polygonData, setPolygonData] = useState<PolygonData>({ geojson: "", coordinates: [], source: "", area_ha: 0 });
   const [polygonOptions, setPolygonOptions] = useState<{ id: string; label: string; coordinates: [number, number][]; area_ha: number }[]>([]);
   
-  // Mapbox token (in a real app, this would come from Supabase secrets)
-  const [mapboxToken] = useState<string>("");
+  // Mapbox token state
+  const [mapboxToken, setMapboxToken] = useState<string>("");
+  const [isLoadingToken, setIsLoadingToken] = useState(true);
+
+  // Fetch Mapbox token on component mount
+  useEffect(() => {
+    const fetchMapboxToken = async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('mapbox-config');
+        
+        if (error) {
+          console.error('Error fetching Mapbox token:', error);
+          toast({
+            title: "Errore configurazione mappa",
+            description: "Impossibile caricare la configurazione della mappa",
+            variant: "destructive"
+          });
+        } else if (data?.mapboxToken) {
+          setMapboxToken(data.mapboxToken);
+        }
+      } catch (error) {
+        console.error('Error calling mapbox-config function:', error);
+      } finally {
+        setIsLoadingToken(false);
+      }
+    };
+
+    fetchMapboxToken();
+  }, []);
 
   // Intelligent date range calculation
   const intelligentDateRange = useMemo(() => {
@@ -281,10 +309,19 @@ const EOSInput: React.FC = () => {
         {/* Step 1: Interactive Map (Primary option) */}
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
-            <MapSelector 
-              onPolygonSelect={handleMapPolygonSelect}
-              mapboxToken={mapboxToken}
-            />
+            {isLoadingToken ? (
+              <Card className="h-96 flex items-center justify-center">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span>Caricamento mappa...</span>
+                </div>
+              </Card>
+            ) : (
+              <MapSelector 
+                onPolygonSelect={handleMapPolygonSelect}
+                mapboxToken={mapboxToken}
+              />
+            )}
           </div>
 
           <div className="space-y-6">

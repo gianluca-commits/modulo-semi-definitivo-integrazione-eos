@@ -1,4 +1,8 @@
+
 project_id = "pgcnhnykyiscckiukpgi"
 
 [functions.eos-proxy]
+verify_jwt = false
+
+[functions.mapbox-config]
 verify_jwt = false
