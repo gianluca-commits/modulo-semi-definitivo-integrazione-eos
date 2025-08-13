@@ -6,7 +6,7 @@ import { GoogleAddressSearch } from './GoogleAddressSearch';
 import GoogleMapsPolygonDrawer from './GoogleMapsPolygonDrawer';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { supabase } from '@/integrations/supabase/client';
+import { googleMapsLoader } from '@/lib/googleMapsLoader';
 
 interface MapSelectorProps {
   onPolygonSelect: (polygon: {
@@ -25,28 +25,25 @@ export const MapSelector: React.FC<MapSelectorProps> = ({
     coordinates: number[][][];
   } | null>(null);
   const [area, setArea] = useState<number | null>(null);
-  const [googleMapsApiKey, setGoogleMapsApiKey] = useState<string | null>(null);
+  const [googleMapsLoaded, setGoogleMapsLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const polygonDrawerRef = useRef<{ flyToLocation: (center: [number, number], bbox?: [number, number, number, number]) => void } | null>(null);
 
   useEffect(() => {
-    const fetchGoogleMapsConfig = async () => {
+    const loadGoogleMaps = async () => {
       try {
-        const { data, error } = await supabase.functions.invoke('google-maps-config');
-        
-        if (error) {
-          console.error('Error fetching Google Maps config:', error);
-        } else if (data?.googleMapsApiKey) {
-          setGoogleMapsApiKey(data.googleMapsApiKey);
-        }
-      } catch (error) {
-        console.error('Error calling google-maps-config function:', error);
+        await googleMapsLoader.load();
+        setGoogleMapsLoaded(true);
+      } catch (err) {
+        console.error('Error loading Google Maps:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load Google Maps');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchGoogleMapsConfig();
+    loadGoogleMaps();
   }, []);
 
   const handleLocationSelect = (center: [number, number], bbox?: [number, number, number, number]) => {
@@ -76,7 +73,7 @@ export const MapSelector: React.FC<MapSelectorProps> = ({
     }
   };
 
-  const needsGoogleMapsToken = !googleMapsApiKey;
+  const hasGoogleMapsError = !googleMapsLoaded && !loading;
 
   return (
     <div className="space-y-4">
@@ -112,14 +109,14 @@ export const MapSelector: React.FC<MapSelectorProps> = ({
         <Alert>
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            Caricamento configurazione mappe...
+            Caricamento Google Maps...
           </AlertDescription>
         </Alert>
-      ) : needsGoogleMapsToken ? (
+      ) : hasGoogleMapsError ? (
         <Alert>
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            Google Maps API non disponibile. Usa l'opzione "File" per caricare un file KML/GeoJSON invece.
+            {error || 'Google Maps API non disponibile'}. Usa l'opzione "File" per caricare un file KML/GeoJSON invece.
             <br />
             <Button variant="link" className="h-auto p-0 text-sm" asChild>
               <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">
@@ -134,7 +131,6 @@ export const MapSelector: React.FC<MapSelectorProps> = ({
           <div className="space-y-2">
             <GoogleAddressSearch 
               onLocationSelect={handleLocationSelect}
-              googleMapsApiKey={googleMapsApiKey}
             />
           </div>
 

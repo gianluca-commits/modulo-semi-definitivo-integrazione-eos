@@ -7,12 +7,10 @@ import { useToast } from '@/hooks/use-toast';
 
 interface GoogleAddressSearchProps {
   onLocationSelect: (center: [number, number], bbox?: [number, number, number, number]) => void;
-  googleMapsApiKey?: string;
 }
 
 export const GoogleAddressSearch: React.FC<GoogleAddressSearchProps> = ({
-  onLocationSelect,
-  googleMapsApiKey
+  onLocationSelect
 }) => {
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([]);
@@ -158,9 +156,6 @@ export const GoogleAddressSearch: React.FC<GoogleAddressSearchProps> = ({
     });
   };
 
-  if (!googleMapsApiKey) {
-    return null;
-  }
 
   return (
     <div className="relative w-full">
