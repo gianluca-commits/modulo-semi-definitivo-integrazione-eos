@@ -22,7 +22,61 @@ export interface EosConfig {
   max_cloud_cover_in_aoi?: number; // 0-100
   exclude_cover_pixels?: boolean;   // exclude pixels flagged as cloudy
   cloud_masking_level?: 0 | 1 | 2;  // 0-none,1-basic,2-advanced
+  // Optional: location context for optimal parameter selection
+  location?: { lat: number; lng: number; country?: string };
 }
+
+// Geographical and seasonal EOS parameter profiles
+export interface EosParameterProfile {
+  max_cloud_cover_in_aoi: number;
+  exclude_cover_pixels: boolean;
+  cloud_masking_level: 0 | 1 | 2;
+  description: string;
+}
+
+export const EOS_PARAMETER_PROFILES: Record<string, EosParameterProfile> = {
+  // Italy summer (June-August): minimal cloud cover expected
+  "italy_summer": {
+    max_cloud_cover_in_aoi: 15,
+    exclude_cover_pixels: false,
+    cloud_masking_level: 1,
+    description: "Italia estate - copertura nuvolosa minima"
+  },
+  // Italy winter (December-February): more clouds expected
+  "italy_winter": {
+    max_cloud_cover_in_aoi: 40,
+    exclude_cover_pixels: false,
+    cloud_masking_level: 1,
+    description: "Italia inverno - maggiore copertura nuvolosa"
+  },
+  // Italy spring/autumn: moderate cloud cover
+  "italy_moderate": {
+    max_cloud_cover_in_aoi: 25,
+    exclude_cover_pixels: false,
+    cloud_masking_level: 1,
+    description: "Italia primavera/autunno - copertura moderata"
+  },
+  // Default Europe profile
+  "europe_default": {
+    max_cloud_cover_in_aoi: 25,
+    exclude_cover_pixels: false,
+    cloud_masking_level: 1,
+    description: "Europa standard - parametri moderati"
+  },
+  // Fallback profiles for escalation
+  "permissive": {
+    max_cloud_cover_in_aoi: 60,
+    exclude_cover_pixels: false,
+    cloud_masking_level: 0,
+    description: "Parametri permissivi - fallback"
+  },
+  "very_permissive": {
+    max_cloud_cover_in_aoi: 80,
+    exclude_cover_pixels: false,
+    cloud_masking_level: 0,
+    description: "Parametri molto permissivi - ultimo tentativo"
+  }
+};
 
 export interface VegetationPoint {
   date: string;
@@ -95,6 +149,62 @@ export function calculateAreaHa(coords: Coordinate[]): number {
   const areaMeters2 = Math.abs(area) / 2;
   const areaHa = areaMeters2 / 10000; // m^2 to ha
   return Number(areaHa.toFixed(2));
+}
+
+// Detect optimal EOS parameters based on polygon location and current season
+export function getOptimalEosParameters(polygon: PolygonData): EosParameterProfile {
+  // Extract location from polygon
+  const coords = polygon.coordinates;
+  if (!coords || coords.length === 0) {
+    return EOS_PARAMETER_PROFILES.europe_default;
+  }
+
+  // Calculate centroid
+  const sumLat = coords.reduce((sum, [, lat]) => sum + lat, 0);
+  const sumLng = coords.reduce((sum, [lng]) => sum + lng, 0);
+  const centroidLat = sumLat / coords.length;
+  const centroidLng = sumLng / coords.length;
+
+  // Determine if it's in Italy (rough bounds)
+  const isItaly = centroidLat >= 35.0 && centroidLat <= 47.5 && 
+                  centroidLng >= 6.0 && centroidLng <= 19.0;
+
+  if (!isItaly) {
+    return EOS_PARAMETER_PROFILES.europe_default;
+  }
+
+  // Determine season for Italy
+  const now = new Date();
+  const month = now.getMonth() + 1; // 1-12
+
+  // Italian seasons with cloud patterns:
+  // Summer (June-August): 6,7,8 - minimal clouds
+  // Winter (December-February): 12,1,2 - more clouds
+  // Spring/Autumn: 3,4,5,9,10,11 - moderate
+  
+  if (month >= 6 && month <= 8) {
+    return EOS_PARAMETER_PROFILES.italy_summer;
+  } else if (month === 12 || month <= 2) {
+    return EOS_PARAMETER_PROFILES.italy_winter;
+  } else {
+    return EOS_PARAMETER_PROFILES.italy_moderate;
+  }
+}
+
+// Apply EOS parameters with intelligent fallback
+export function applyEosParametersWithFallback(config: EosConfig, polygon: PolygonData): EosConfig {
+  const optimal = getOptimalEosParameters(polygon);
+  
+  return {
+    ...config,
+    max_cloud_cover_in_aoi: config.max_cloud_cover_in_aoi ?? optimal.max_cloud_cover_in_aoi,
+    exclude_cover_pixels: config.exclude_cover_pixels ?? optimal.exclude_cover_pixels,
+    cloud_masking_level: config.cloud_masking_level ?? optimal.cloud_masking_level,
+    location: polygon.coordinates?.length ? {
+      lat: polygon.coordinates.reduce((sum, [, lat]) => sum + lat, 0) / polygon.coordinates.length,
+      lng: polygon.coordinates.reduce((sum, [lng]) => sum + lng, 0) / polygon.coordinates.length
+    } : undefined
+  };
 }
 
 // Demo generators
@@ -273,6 +383,13 @@ export interface EosSummary {
       exclude_cover_pixels?: boolean;
       cloud_masking_level?: number;
     };
+    // Optimization metadata
+    optimization_used?: boolean;
+    attempt_number?: number;
+    escalation_used?: boolean;
+    escalation_level?: string;
+    all_attempts_failed?: boolean;
+    suggestions?: string[];
   };
 }
 
@@ -333,46 +450,98 @@ export async function getEosSummary(
     };
   }
 
-  // Live mode with simple retry/backoff to handle EOS 429 rate limits
-  const attemptInvoke = async (attempt: number) => {
+  // Apply optimal parameters based on location and season
+  const optimizedConfig = applyEosParametersWithFallback(config, _polygon);
+  
+  // Enhanced retry mechanism with escalating parameters
+  const attemptInvoke = async (attempt: number, useEscalation = false) => {
+    let requestConfig = optimizedConfig;
+    
+    if (useEscalation) {
+      // Use increasingly permissive parameters for fallback attempts
+      if (attempt === 2) {
+        const permissive = EOS_PARAMETER_PROFILES.permissive;
+        requestConfig = {
+          ...optimizedConfig,
+          max_cloud_cover_in_aoi: permissive.max_cloud_cover_in_aoi,
+          exclude_cover_pixels: permissive.exclude_cover_pixels,
+          cloud_masking_level: permissive.cloud_masking_level,
+        };
+      } else if (attempt >= 3) {
+        const veryPermissive = EOS_PARAMETER_PROFILES.very_permissive;
+        requestConfig = {
+          ...optimizedConfig,
+          max_cloud_cover_in_aoi: veryPermissive.max_cloud_cover_in_aoi,
+          exclude_cover_pixels: veryPermissive.exclude_cover_pixels,
+          cloud_masking_level: veryPermissive.cloud_masking_level,
+        };
+      }
+    }
+
     const res = await supabase.functions.invoke("eos-proxy", {
       body: {
         action: "summary",
         polygon: _polygon,
-        crop_type: config.cropType,
-        planting_date: config.planting_date,
-        start_date: config.start_date,
-        end_date: config.end_date,
-        max_cloud_cover_in_aoi: config.max_cloud_cover_in_aoi,
-        exclude_cover_pixels: config.exclude_cover_pixels,
-        cloud_masking_level: config.cloud_masking_level,
+        crop_type: requestConfig.cropType,
+        planting_date: requestConfig.planting_date,
+        start_date: requestConfig.start_date,
+        end_date: requestConfig.end_date,
+        max_cloud_cover_in_aoi: requestConfig.max_cloud_cover_in_aoi,
+        exclude_cover_pixels: requestConfig.exclude_cover_pixels,
+        cloud_masking_level: requestConfig.cloud_masking_level,
       },
     });
     return res;
   };
 
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    const { data, error } = await attemptInvoke(attempt);
+  // Try with optimal parameters first, then escalate
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    const useEscalation = attempt > 1;
+    const { data, error } = await attemptInvoke(attempt, useEscalation);
+    
     if (!error && data) {
+      // Add metadata about which parameters were used
+      if (data.meta) {
+        data.meta.optimization_used = true;
+        data.meta.attempt_number = attempt;
+        if (useEscalation) {
+          data.meta.escalation_used = true;
+          data.meta.escalation_level = attempt === 2 ? "permissive" : "very_permissive";
+        }
+      }
       return data as EosSummary;
     }
+    
     const msg = String((error as any)?.message || "");
     if (msg.includes("429") || msg.toLowerCase().includes("limit")) {
-      const backoff = 1000 * attempt * attempt; // 1s, 4s, 9s
-      console.warn(`eos-proxy summary rate-limited, retrying in ${backoff}ms (attempt ${attempt})`);
+      // Increased backoff for rate limiting: 3s, 8s, 15s, 25s
+      const backoff = attempt <= 2 ? 3000 * attempt : 5000 * attempt; 
+      console.warn(`eos-proxy summary rate-limited, retrying in ${backoff}ms (attempt ${attempt}${useEscalation ? ', using escalated parameters' : ''})`);
       await new Promise((r) => setTimeout(r, backoff));
       continue;
     }
-    console.error("eos-proxy summary error:", error);
-    break;
+    
+    console.error(`eos-proxy summary error on attempt ${attempt}:`, error);
+    if (attempt < 4) {
+      // Brief pause before escalation
+      await new Promise((r) => setTimeout(r, 2000));
+    }
   }
+  
   return {
     ndvi_data: {},
     ndmi_data: { critical_threshold: 0.3 },
     phenology: {},
     weather_risks: {},
     ndvi_series: [],
-    meta: { observation_count: 0, fallback_used: false, start_date: config.start_date, end_date: config.end_date },
+    meta: { 
+      observation_count: 0, 
+      fallback_used: false, 
+      start_date: optimizedConfig.start_date, 
+      end_date: optimizedConfig.end_date,
+      optimization_used: true,
+      all_attempts_failed: true
+    },
   };
 }
 

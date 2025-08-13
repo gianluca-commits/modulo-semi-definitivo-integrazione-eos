@@ -105,14 +105,14 @@ serve(async (req) => {
       const sd = start_date ?? new Date(Date.now() - 60 * 24 * 3600 * 1000).toISOString().slice(0, 10);
       const ed = end_date ?? new Date().toISOString().slice(0, 10);
 
-      // Read optional filters from request (with safe defaults)
+      // Read optional filters from request (with optimized defaults for Italy)
       const maxCloud = typeof (body as any)?.max_cloud_cover_in_aoi === "number"
         ? Math.max(0, Math.min(100, (body as any).max_cloud_cover_in_aoi))
-        : 30;
+        : 15; // Optimized default for Italy summer
       const excludeCover = typeof (body as any)?.exclude_cover_pixels === "boolean"
         ? (body as any).exclude_cover_pixels
-        : true;
-      const cml = typeof (body as any)?.cloud_masking_level === "number" ? (body as any).cloud_masking_level : 2;
+        : false; // More permissive default
+      const cml = typeof (body as any)?.cloud_masking_level === "number" ? (body as any).cloud_masking_level : 1; // Moderate masking
 
       const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -152,14 +152,16 @@ serve(async (req) => {
 
         const statusUrl = `https://api-connect.eos.com/api/gdw/api/${taskId}?api_key=${apiKey}`;
         let attempts = 0;
-          while (attempts < 18) { // ~144s max with 8s interval
+          while (attempts < 20) { // Increased max attempts for better reliability
             attempts++;
             const st = await fetch(statusUrl);
             if (!st.ok) {
               const t = await st.text();
               if (st.status === 429 || t.includes("limit")) {
-                console.error("Stats status 429 - backing off 12s");
-                await sleep(12000);
+                // Increased backoff for rate limiting
+                const backoffTime = Math.min(15000, 5000 + attempts * 2000); // 5s to 15s escalating
+                console.error(`Stats status 429 - backing off ${backoffTime}ms (attempt ${attempts})`);
+                await sleep(backoffTime);
                 continue;
               }
               throw new Error(`Stats status failed: ${st.status} ${t}`);
@@ -174,7 +176,7 @@ serve(async (req) => {
               }
               return map;
             }
-            await sleep(8000); // slower polling to respect RPM
+            await sleep(10000); // Slower polling to better respect rate limits
           }
         throw new Error("Statistics task timed out");
       };
@@ -189,14 +191,26 @@ serve(async (req) => {
 
       const initialDates = Array.from(new Set([...Object.keys(ndviMap1), ...Object.keys(ndmiMap1)]));
       if (initialDates.length === 0) {
-        // Retry once with more tolerant filters
+        // Intelligent fallback with escalating permissiveness
         fallback_used = true;
-        const tMaxCloud = Math.max(maxCloud, 60);
-        const tExclude = false;
-        const tCml = 1;
-        console.log("EOS stats empty, retrying with tolerant filters", { tMaxCloud, tExclude, tCml });
+        // First fallback: more permissive but still reasonable
+        let tMaxCloud = Math.max(maxCloud * 2, 40); // Double current or minimum 40%
+        let tExclude = false;
+        let tCml = Math.max(0, cml - 1); // Reduce masking level
+        console.log("EOS stats empty, retrying with permissive filters", { tMaxCloud, tExclude, tCml });
+        
         ndviMap = await createAndFetchStats("NDVI", { maxCloud: tMaxCloud, excludeCover: tExclude, cml: tCml });
         ndmiMap = await createAndFetchStats("NDMI", { maxCloud: tMaxCloud, excludeCover: tExclude, cml: tCml });
+        
+        // If still no data, try very permissive settings
+        const fallbackDates = Array.from(new Set([...Object.keys(ndviMap), ...Object.keys(ndmiMap)]));
+        if (fallbackDates.length === 0) {
+          tMaxCloud = 70; // Very high cloud tolerance
+          tCml = 0; // No cloud masking
+          console.log("EOS stats still empty, trying very permissive filters", { tMaxCloud, tExclude, tCml });
+          ndviMap = await createAndFetchStats("NDVI", { maxCloud: tMaxCloud, excludeCover: tExclude, cml: tCml });
+          ndmiMap = await createAndFetchStats("NDMI", { maxCloud: tMaxCloud, excludeCover: tExclude, cml: tCml });
+        }
       }
 
       const allDates = Array.from(new Set([...Object.keys(ndviMap), ...Object.keys(ndmiMap)])).sort();
@@ -366,10 +380,10 @@ serve(async (req) => {
       const sd = planting_date || providedStart || new Date(Date.now() - 60 * 24 * 3600 * 1000).toISOString().slice(0, 10);
       const ed = providedEnd || todayIso;
 
-      // Cloud filters
-      const maxCloud = typeof (body as any)?.max_cloud_cover_in_aoi === "number" ? Math.max(0, Math.min(100, (body as any).max_cloud_cover_in_aoi)) : 30;
-      const excludeCover = typeof (body as any)?.exclude_cover_pixels === "boolean" ? (body as any).exclude_cover_pixels : true;
-      const cml = typeof (body as any)?.cloud_masking_level === "number" ? (body as any).cloud_masking_level : 2;
+      // Cloud filters with optimized defaults
+      const maxCloud = typeof (body as any)?.max_cloud_cover_in_aoi === "number" ? Math.max(0, Math.min(100, (body as any).max_cloud_cover_in_aoi)) : 15; // Italy summer optimized
+      const excludeCover = typeof (body as any)?.exclude_cover_pixels === "boolean" ? (body as any).exclude_cover_pixels : false; // More permissive default
+      const cml = typeof (body as any)?.cloud_masking_level === "number" ? (body as any).cloud_masking_level : 1; // Moderate masking
 
       const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -408,14 +422,16 @@ serve(async (req) => {
 
         const statusUrl = `https://api-connect.eos.com/api/gdw/api/${taskId}?api_key=${apiKey}`;
         let attempts = 0;
-        while (attempts < 18) {
+        while (attempts < 20) { // Increased max attempts
           attempts++;
           const st = await fetch(statusUrl);
           if (!st.ok) {
             const t = await st.text();
             if (st.status === 429 || t.includes("limit")) {
-              console.error("Summary stats status 429 - backing off 10s");
-              await sleep(10000);
+              // Enhanced backoff strategy for summary requests
+              const backoffTime = Math.min(20000, 7000 + attempts * 2500); // 7s to 20s escalating
+              console.error(`Summary stats status 429 - backing off ${backoffTime}ms (attempt ${attempts})`);
+              await sleep(backoffTime);
               continue;
             }
             throw new Error(`Stats status failed: ${st.status} ${t}`);

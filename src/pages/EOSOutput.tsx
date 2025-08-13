@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { EosSummary, computeProductivity, getEosSummary, demoVegetation, type PolygonData, type EosConfig } from "@/lib/eos";
+import { EosSummary, computeProductivity, getEosSummary, demoVegetation, type PolygonData, type EosConfig, getOptimalEosParameters } from "@/lib/eos";
+import { EosParameterDisplay } from "@/components/EosParameterDisplay";
 import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { BarChart3, ArrowLeft, ThermometerSun, Droplets, Leaf, Activity, Download, AlertCircle } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -46,6 +47,13 @@ const EOSOutput: React.FC = () => {
   const [usePermissiveFilters, setUsePermissiveFilters] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [showDemo, setShowDemo] = useState(false);
+  // Get optimal profile for UI display
+  const optimalProfile = useMemo(() => {
+    if (!polygon) return null;
+    const profile = getOptimalEosParameters(polygon);
+    return profile;
+  }, [polygon]);
+
   const eosConfig: EosConfig | null = useMemo(() => {
     if (!userCfg) return null;
     const cfg: EosConfig = {
@@ -55,9 +63,13 @@ const EOSOutput: React.FC = () => {
       planting_date: userCfg.planting_date,
       start_date: userCfg.start_date,
       end_date: userCfg.end_date,
-      max_cloud_cover_in_aoi: usePermissiveFilters ? 70 : 30,
-      exclude_cover_pixels: usePermissiveFilters ? false : true,
-      cloud_masking_level: usePermissiveFilters ? 0 : 2
+      // Only override parameters if using permissive filters manually
+      ...(usePermissiveFilters ? {
+        max_cloud_cover_in_aoi: 70,
+        exclude_cover_pixels: false,
+        cloud_masking_level: 0
+      } : {})
+      // Otherwise let the optimization function handle it automatically
     };
     return cfg;
   }, [userCfg, usePermissiveFilters]);
@@ -234,27 +246,35 @@ const EOSOutput: React.FC = () => {
 
       <section className="max-w-6xl mx-auto px-4 py-6 space-y-6">
         {/* Field Information Header */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Campo Analizzato</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid md:grid-cols-3 gap-4 text-sm">
-              <div>
-                <span className="text-muted-foreground">Area:</span>
-                <p className="font-medium">{polygon.area_ha} ha</p>
+        <div className="grid md:grid-cols-3 gap-4">
+          <Card className="md:col-span-2">
+            <CardHeader>
+              <CardTitle>Campo Analizzato</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid md:grid-cols-3 gap-4 text-sm">
+                <div>
+                  <span className="text-muted-foreground">Area:</span>
+                  <p className="font-medium">{polygon.area_ha} ha</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Fonte:</span>
+                  <p className="font-medium">{polygon.source}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Coltura:</span>
+                  <p className="font-medium">{userCfg.cropType}</p>
+                </div>
               </div>
-              <div>
-                <span className="text-muted-foreground">Fonte:</span>
-                <p className="font-medium">{polygon.source}</p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Coltura:</span>
-                <p className="font-medium">{userCfg.cropType}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+          
+          {/* EOS Parameter Display */}
+          <EosParameterDisplay 
+            summary={summary} 
+            optimizationProfile={optimalProfile?.description}
+          />
+        </div>
 
         {/* Polygon Visualization */}
         {polygon && <GoogleMapsVisualization polygon={polygon} title="Campo Analizzato" description={`${polygon.source} • ${userCfg.cropType} • ${polygon.area_ha} ha`} />}
