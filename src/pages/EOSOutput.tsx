@@ -9,7 +9,7 @@ import { BarChart3, ArrowLeft, ThermometerSun, Droplets, Leaf, Activity, Downloa
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { PolygonVisualization } from "@/components/PolygonVisualization";
+import LeafletVisualization from "@/components/LeafletVisualization";
 import { supabase } from "@/integrations/supabase/client";
 function setMetaTags(title: string, description: string, canonicalPath: string) {
   document.title = title;
@@ -252,10 +252,9 @@ const ts = isDemo && showDemo ? demoTs : rawTs;
         </Card>
 
         {/* Polygon Visualization */}
-        {polygon && mapboxToken && (
-          <PolygonVisualization
+        {polygon && (
+          <LeafletVisualization
             polygon={polygon}
-            mapboxToken={mapboxToken}
             title="Campo Analizzato"
             description={`${polygon.source} • ${userCfg.cropType} • ${polygon.area_ha} ha`}
           />

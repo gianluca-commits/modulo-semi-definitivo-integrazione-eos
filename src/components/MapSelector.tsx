@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Map, AlertCircle, MapPin, Mouse } from 'lucide-react';
 import { AddressSearch } from './AddressSearch';
-import { PolygonDrawer } from './PolygonDrawer';
+import LeafletPolygonDrawer from './LeafletPolygonDrawer';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
@@ -35,20 +35,23 @@ export const MapSelector: React.FC<MapSelectorProps> = ({
     }
   };
 
-  const handlePolygonChange = (polygon: {
-    type: string;
-    coordinates: number[][][];
-  } | null, polygonArea?: number) => {
-    setSelectedPolygon(polygon);
-    setArea(polygonArea || null);
-
-    if (polygon && polygonArea) {
-      onPolygonSelect({
-        type: polygon.type,
-        coordinates: polygon.coordinates,
-        source: "interactive_map",
-        area: polygonArea
+  const handlePolygonChange = (polygon: { coordinates: number[][], area: number } | null) => {
+    if (polygon) {
+      setSelectedPolygon({
+        type: "Polygon",
+        coordinates: [polygon.coordinates]
       });
+      setArea(polygon.area);
+
+      onPolygonSelect({
+        type: "Polygon",
+        coordinates: [polygon.coordinates],
+        source: "interactive_map",
+        area: polygon.area
+      });
+    } else {
+      setSelectedPolygon(null);
+      setArea(null);
     }
   };
 
@@ -109,11 +112,10 @@ export const MapSelector: React.FC<MapSelectorProps> = ({
 
           {/* Map and Status */}
           <div className="space-y-2">
-            <PolygonDrawer
-              ref={polygonDrawerRef}
-              onPolygonChange={handlePolygonChange}
-              mapboxToken={mapboxToken}
-            />
+        <LeafletPolygonDrawer
+          ref={polygonDrawerRef}
+          onPolygonChange={handlePolygonChange}
+        />
             
             {/* Status Bar */}
             {selectedPolygon && area && (

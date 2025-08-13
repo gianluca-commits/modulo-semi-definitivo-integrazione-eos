@@ -2,9 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Mapbox GL CSS - Import globally to ensure proper loading */
-@import 'mapbox-gl/dist/mapbox-gl.css';
-@import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
+/* Leaflet CSS - Import globally to ensure proper loading */
+@import 'leaflet/dist/leaflet.css';
+@import 'leaflet-draw/dist/leaflet.draw.css';
 
 /* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
 All colors MUST be HSL.
@@ -108,45 +108,24 @@ All colors MUST be HSL.
   }
 }
 
-/* Ensure MapboxDraw controls are visible and styled */
-.mapboxgl-ctrl-group {
+/* Ensure Leaflet Draw controls are visible and styled */
+.leaflet-draw-toolbar {
   visibility: visible !important;
   opacity: 1 !important;
-  display: flex !important;
-  flex-direction: column !important;
+}
+
+.leaflet-draw-toolbar a {
   background: hsl(var(--background)) !important;
   border: 1px solid hsl(var(--border)) !important;
-  border-radius: 4px !important;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
-  overflow: visible !important;
-  z-index: 1000 !important;
-}
-
-.mapbox-gl-draw_ctrl-draw-btn {
-  visibility: visible !important;
-  opacity: 1 !important;
-  display: block !important;
-  background: hsl(var(--background)) !important;
-  border: none !important;
-  border-bottom: 1px solid hsl(var(--border)) !important;
-  width: 30px !important;
-  height: 30px !important;
-  cursor: pointer !important;
   color: hsl(var(--foreground)) !important;
-  transition: all 0.2s ease !important;
-  position: relative !important;
 }
 
-.mapbox-gl-draw_ctrl-draw-btn:last-child {
-  border-bottom: none !important;
-}
-
-.mapbox-gl-draw_ctrl-draw-btn:hover {
+.leaflet-draw-toolbar a:hover {
   background: hsl(var(--accent)) !important;
   color: hsl(var(--accent-foreground)) !important;
 }
 
-.mapbox-gl-draw_ctrl-draw-btn.active {
+.leaflet-draw-toolbar a.leaflet-draw-toolbar-button-enabled {
   background: hsl(var(--primary)) !important;
   color: hsl(var(--primary-foreground)) !important;
 }
