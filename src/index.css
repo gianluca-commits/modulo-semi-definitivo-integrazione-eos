@@ -108,34 +108,48 @@ All colors MUST be HSL.
   }
 }
 
-/* Ensure MapboxDraw controls are visible */
+/* Ensure MapboxDraw controls are visible and styled */
 .mapboxgl-ctrl-group {
   visibility: visible !important;
   opacity: 1 !important;
   display: flex !important;
   flex-direction: column !important;
-  background: white !important;
+  background: hsl(var(--background)) !important;
+  border: 1px solid hsl(var(--border)) !important;
   border-radius: 4px !important;
-  box-shadow: 0 0 10px 2px rgba(0,0,0,.1) !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+  overflow: visible !important;
+  z-index: 1000 !important;
 }
 
 .mapbox-gl-draw_ctrl-draw-btn {
   visibility: visible !important;
   opacity: 1 !important;
   display: block !important;
-  background: white !important;
-  border: 1px solid #ddd !important;
+  background: hsl(var(--background)) !important;
+  border: none !important;
+  border-bottom: 1px solid hsl(var(--border)) !important;
   width: 30px !important;
   height: 30px !important;
   cursor: pointer !important;
+  color: hsl(var(--foreground)) !important;
+  transition: all 0.2s ease !important;
+  position: relative !important;
+}
+
+.mapbox-gl-draw_ctrl-draw-btn:last-child {
+  border-bottom: none !important;
 }
 
 .mapbox-gl-draw_ctrl-draw-btn:hover {
-  background-color: #f0f0f0 !important;
+  background: hsl(var(--accent)) !important;
+  color: hsl(var(--accent-foreground)) !important;
 }
 
-/* Force MapboxDraw CSS to load */
-@import url('https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.css');
+.mapbox-gl-draw_ctrl-draw-btn.active {
+  background: hsl(var(--primary)) !important;
+  color: hsl(var(--primary-foreground)) !important;
+}
 
 /* Print styles */
 @media print {

@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import { Card } from '@/components/ui/card';
@@ -8,6 +8,7 @@ import { Trash2, Info, Edit3, Undo2, Plus, Hand } from 'lucide-react';
 import { DEFAULT_CENTER, DEFAULT_ZOOM, validatePolygon, polygonToGeoJSON } from '@/lib/mapbox';
 import { useToast } from '@/hooks/use-toast';
 import { useMapboxStable } from '@/hooks/useMapboxStable';
+import { CustomDrawControls } from './CustomDrawControls';
 
 // Mapbox CSS now imported globally in index.css
 
@@ -36,6 +37,7 @@ export const PolygonDrawer = React.forwardRef<{
   const [drawingMode, setDrawingMode] = useState<'draw_polygon' | 'direct_select' | 'simple_select'>('draw_polygon');
   const [pointCount, setPointCount] = useState(0);
   const [hasPolygon, setHasPolygon] = useState(false);
+  const [showCustomControls, setShowCustomControls] = useState(false);
   const {
     toast
   } = useToast();
@@ -118,64 +120,114 @@ export const PolygonDrawer = React.forwardRef<{
       // Add navigation controls
       map.addControl(new mapboxgl.NavigationControl(), 'top-right');
 
-      // Initialize drawing tools with some default controls and our custom ones
-      draw.current = new MapboxDraw({
-        displayControlsDefault: false,
-        controls: {
-          polygon: true,
-          trash: true
-        },
-        defaultMode: 'draw_polygon',
-        userProperties: true,
-        clickBuffer: 2,
-        touchBuffer: 25
-      });
-      map.addControl(draw.current, 'top-left');
-      
-      console.log('Draw controls added to map. Checking if visible...');
-      
-      // Enhanced control visibility checking with multiple attempts
-      const checkControls = () => {
-        const drawControls = document.querySelector('.mapboxgl-ctrl-group');
-        const drawButtons = document.querySelectorAll('.mapbox-gl-draw_ctrl-draw-btn');
-        console.log('Draw controls in DOM:', drawControls ? 'YES' : 'NO');
-        console.log('Draw buttons found:', drawButtons.length);
-        
-        if (drawControls) {
-          console.log('Draw controls styles:', window.getComputedStyle(drawControls));
-          // Force visibility
-          (drawControls as HTMLElement).style.display = 'flex';
-          (drawControls as HTMLElement).style.visibility = 'visible';
-          (drawControls as HTMLElement).style.opacity = '1';
-          (drawControls as HTMLElement).style.flexDirection = 'column';
-        }
-        
-        drawButtons.forEach((btn, index) => {
-          console.log(`Button ${index} styles:`, window.getComputedStyle(btn));
-          (btn as HTMLElement).style.display = 'block';
-          (btn as HTMLElement).style.visibility = 'visible';
-          (btn as HTMLElement).style.opacity = '1';
-          (btn as HTMLElement).style.width = '30px';
-          (btn as HTMLElement).style.height = '30px';
+      // Wait for the map to be fully loaded before adding draw controls
+      const addDrawControls = () => {
+        // Initialize drawing tools with enhanced configuration
+        draw.current = new MapboxDraw({
+          displayControlsDefault: false,
+          controls: {
+            polygon: true,
+            trash: true
+          },
+          defaultMode: 'draw_polygon',
+          userProperties: true,
+          clickBuffer: 2,
+          touchBuffer: 25
         });
+        
+        map.addControl(draw.current, 'top-left');
+        console.log('MapboxDraw control added to map');
+        
+        // Enhanced control visibility with multiple strategies
+        const ensureVisibility = () => {
+          const maxAttempts = 10;
+          let attempts = 0;
+          
+          const checkAndFix = () => {
+            attempts++;
+            const drawControls = document.querySelector('.mapboxgl-ctrl-group');
+            const drawButtons = document.querySelectorAll('.mapbox-gl-draw_ctrl-draw-btn');
+            
+            console.log(`Attempt ${attempts}: Draw controls found:`, drawControls ? 'YES' : 'NO');
+            console.log(`Attempt ${attempts}: Draw buttons found:`, drawButtons.length);
+            
+            if (drawControls && drawButtons.length > 0) {
+              // Force visibility with stronger CSS
+              const controlElement = drawControls as HTMLElement;
+              controlElement.style.cssText = `
+                display: flex !important;
+                visibility: visible !important;
+                opacity: 1 !important;
+                flex-direction: column !important;
+                position: absolute !important;
+                z-index: 1000 !important;
+                background: white !important;
+                border-radius: 4px !important;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+                top: 10px !important;
+                left: 10px !important;
+              `;
+              
+              drawButtons.forEach((btn, index) => {
+                const buttonElement = btn as HTMLElement;
+                buttonElement.style.cssText = `
+                  display: block !important;
+                  visibility: visible !important;
+                  opacity: 1 !important;
+                  width: 30px !important;
+                  height: 30px !important;
+                  border: none !important;
+                  border-bottom: 1px solid #ddd !important;
+                  background: white !important;
+                  cursor: pointer !important;
+                  position: relative !important;
+                `;
+                console.log(`Button ${index} styled successfully`);
+              });
+              
+              console.log('✅ Draw controls visibility ensured');
+              setShowCustomControls(false); // Hide custom controls if native ones work
+              return true;
+            }
+            
+            if (attempts < maxAttempts) {
+              setTimeout(checkAndFix, 200);
+            } else {
+              console.warn('❌ Could not ensure draw controls visibility after', maxAttempts, 'attempts');
+              console.log('🔄 Falling back to custom controls');
+              setShowCustomControls(true); // Show custom controls as fallback
+            }
+            return false;
+          };
+          
+          // Start checking immediately
+          checkAndFix();
+        };
+        
+        // Start visibility checks after a short delay
+        setTimeout(ensureVisibility, 100);
+        
+        // Add event listeners
+        map.on('draw.create', handlePolygonUpdate);
+        map.on('draw.update', handlePolygonUpdate);
+        map.on('draw.delete', handlePolygonUpdate);
+        map.on('draw.modechange', (e: any) => {
+          console.log('Mode changed to:', e.mode);
+          setDrawingMode(e.mode as 'draw_polygon' | 'direct_select' | 'simple_select');
+        });
+        
+        console.log('✅ Draw controls setup complete. Current mode:', draw.current.getMode());
       };
       
-      // Check immediately and after delays
-      setTimeout(checkControls, 100);
-      setTimeout(checkControls, 500);
-      setTimeout(checkControls, 1000);
-
-      // Add event listeners
-      map.on('draw.create', handlePolygonUpdate);
-      map.on('draw.update', handlePolygonUpdate);
-      map.on('draw.delete', handlePolygonUpdate);
-      map.on('draw.modechange', (e: any) => {
-        console.log('Mode changed to:', e.mode);
-        setDrawingMode(e.mode as 'draw_polygon' | 'direct_select' | 'simple_select');
-      });
-      console.log('Draw controls setup complete. Current mode:', draw.current.getMode());
+      // Wait for map to be completely ready
+      if (map.loaded()) {
+        addDrawControls();
+      } else {
+        map.on('load', addDrawControls);
+      }
+      
     } catch (error) {
-      console.error('Error setting up draw controls:', error);
+      console.error('❌ Error setting up draw controls:', error);
     }
   }, [map, isInitialized, handlePolygonUpdate]);
 
@@ -271,6 +323,10 @@ export const PolygonDrawer = React.forwardRef<{
       });
     }
   };
+  const handleCustomModeChange = useCallback((mode: string) => {
+    setDrawingMode(mode as 'draw_polygon' | 'direct_select' | 'simple_select');
+  }, []);
+
   const retryMapLoad = () => {
     // Clean up draw controls first
     if (draw.current && map) {
@@ -284,6 +340,9 @@ export const PolygonDrawer = React.forwardRef<{
         draw.current = null;
       }
     }
+
+    // Reset custom controls state
+    setShowCustomControls(false);
 
     // Use the stable hook's retry function
     retry();
@@ -316,8 +375,17 @@ export const PolygonDrawer = React.forwardRef<{
             </div>
           </div>}
         
+        {/* Custom draw controls as fallback */}
+        {showCustomControls && (
+          <CustomDrawControls
+            draw={draw.current}
+            currentMode={drawingMode}
+            onModeChange={handleCustomModeChange}
+          />
+        )}
+
         {/* Drawing instructions and status */}
-        <div className="absolute top-4 left-4 right-4 z-10 space-y-2">
+        <div className="absolute top-4 left-20 right-4 z-10 space-y-2">
           {/* Instructions card */}
           {!hasPolygon && (
             <Card className="p-3 bg-background/95 backdrop-blur-sm border-primary/20">

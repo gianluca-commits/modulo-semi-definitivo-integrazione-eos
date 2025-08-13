@@ -154,8 +154,8 @@ const EOSInput: React.FC = () => {
   }, []);
 
 
-  // Handle polygon selection from map
-  const handleMapPolygonSelect = (polygon: {
+  // Handle polygon selection from map - memoized to prevent re-renders
+  const handleMapPolygonSelect = React.useCallback((polygon: {
     type: string;
     coordinates: number[][][];
     source: string;
@@ -174,7 +174,7 @@ const EOSInput: React.FC = () => {
       title: "Campo selezionato", 
       description: `Poligono di ${polygon.area.toFixed(2)} ha dalla mappa` 
     });
-  };
+  }, [toast]);
 
   const handleFileUpload = async (file: File) => {
     try {
