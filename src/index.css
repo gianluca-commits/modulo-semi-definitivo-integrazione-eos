@@ -2,9 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Leaflet CSS - Import globally to ensure proper loading */
-@import 'leaflet/dist/leaflet.css';
-@import 'leaflet-draw/dist/leaflet.draw.css';
+/* Google Maps integration - no additional CSS imports needed */
 
 /* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
 All colors MUST be HSL.
@@ -108,26 +106,9 @@ All colors MUST be HSL.
   }
 }
 
-/* Ensure Leaflet Draw controls are visible and styled */
-.leaflet-draw-toolbar {
-  visibility: visible !important;
-  opacity: 1 !important;
-}
-
-.leaflet-draw-toolbar a {
-  background: hsl(var(--background)) !important;
-  border: 1px solid hsl(var(--border)) !important;
-  color: hsl(var(--foreground)) !important;
-}
-
-.leaflet-draw-toolbar a:hover {
-  background: hsl(var(--accent)) !important;
-  color: hsl(var(--accent-foreground)) !important;
-}
-
-.leaflet-draw-toolbar a.leaflet-draw-toolbar-button-enabled {
-  background: hsl(var(--primary)) !important;
-  color: hsl(var(--primary-foreground)) !important;
+/* Google Maps custom styling */
+.google-maps-container {
+  border-radius: hsl(var(--radius));
 }
 
 /* Print styles */
