@@ -26,6 +26,8 @@ export const AddressSearch: React.FC<AddressSearchProps> = ({
   const { toast } = useToast();
 
   const searchAddress = useCallback(async (searchQuery: string) => {
+    console.log('Search triggered for:', searchQuery);
+    
     if (!mapboxToken) {
       toast({
         title: "Token Mapbox mancante",
@@ -43,6 +45,7 @@ export const AddressSearch: React.FC<AddressSearchProps> = ({
     setIsLoading(true);
     try {
       const result = await geocodeAddress(searchQuery, mapboxToken);
+      console.log('Search results:', result.suggestions.length);
       setSuggestions(result.suggestions);
       setShowSuggestions(true);
     } catch (error) {
@@ -55,7 +58,7 @@ export const AddressSearch: React.FC<AddressSearchProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [mapboxToken, toast]);
+  }, [mapboxToken]);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -65,7 +68,7 @@ export const AddressSearch: React.FC<AddressSearchProps> = ({
         setSuggestions([]);
         setShowSuggestions(false);
       }
-    }, 300);
+    }, 500);
 
     return () => clearTimeout(timeoutId);
   }, [query, searchAddress]);
@@ -86,8 +89,12 @@ export const AddressSearch: React.FC<AddressSearchProps> = ({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           className="pl-10 pr-10"
-          onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-          onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+          onBlur={() => setTimeout(() => setShowSuggestions(false), 300)}
+          onFocus={() => {
+            if (suggestions.length > 0) {
+              setShowSuggestions(true);
+            }
+          }}
         />
         {isLoading && (
           <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />

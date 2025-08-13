@@ -283,13 +283,78 @@ export const PolygonDrawer = React.forwardRef<{
             </div>
           </div>}
         
-        {/* Drawing toolbar */}
+        {/* Drawing instructions and status */}
         <div className="absolute top-4 left-4 right-4 z-10 space-y-2">
-          {/* Info card */}
-          
+          {/* Instructions card */}
+          {!hasPolygon && (
+            <Card className="p-3 bg-background/95 backdrop-blur-sm border-primary/20">
+              <div className="flex items-center gap-2 text-sm">
+                <div className="bg-primary/10 p-1 rounded">
+                  <Plus className="h-3 w-3 text-primary" />
+                </div>
+                <span className="font-medium text-primary">
+                  Clicca sulla mappa per iniziare a disegnare il campo
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1 ml-6">
+                Usa il pulsante del poligono nella barra di controllo sulla sinistra
+              </p>
+            </Card>
+          )}
 
-          {/* Simplified control buttons */}
-          
+          {/* Drawing in progress */}
+          {drawingMode === 'draw_polygon' && pointCount > 0 && (
+            <Card className="p-3 bg-background/95 backdrop-blur-sm border-orange-500/20">
+              <div className="flex items-center gap-2 text-sm">
+                <div className="bg-orange-100 p-1 rounded">
+                  <Edit3 className="h-3 w-3 text-orange-600" />
+                </div>
+                <span className="font-medium text-orange-600">
+                  Disegno in corso: {pointCount} punti
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1 ml-6">
+                Fai doppio clic per completare il poligono
+              </p>
+            </Card>
+          )}
+
+          {/* Control buttons */}
+          {hasPolygon && (
+            <div className="flex gap-2">
+              <Button 
+                onClick={startNewPolygon} 
+                size="sm" 
+                variant="outline"
+                className="bg-background/95 backdrop-blur-sm"
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Nuovo Campo
+              </Button>
+              
+              {drawingMode !== 'direct_select' ? (
+                <Button 
+                  onClick={enterEditMode} 
+                  size="sm" 
+                  variant="outline"
+                  className="bg-background/95 backdrop-blur-sm"
+                >
+                  <Edit3 className="h-4 w-4 mr-1" />
+                  Modifica
+                </Button>
+              ) : (
+                <Button 
+                  onClick={exitEditMode} 
+                  size="sm" 
+                  variant="outline"
+                  className="bg-background/95 backdrop-blur-sm"
+                >
+                  <Hand className="h-4 w-4 mr-1" />
+                  Seleziona
+                </Button>
+              )}
+            </div>
+          )}
         </div>
 
       </Card>
