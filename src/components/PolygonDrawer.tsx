@@ -189,7 +189,34 @@ export const PolygonDrawer = React.forwardRef<
 
 
     return () => {
-      map.current?.remove();
+      // Safely cleanup map and drawing controls
+      try {
+        if (draw.current) {
+          // Remove drawing controls first
+          if (map.current && map.current.hasControl(draw.current)) {
+            map.current.removeControl(draw.current);
+          }
+          draw.current = null;
+        }
+        
+        if (map.current) {
+          // Check if map is loaded before removing
+          if (map.current.loaded()) {
+            map.current.remove();
+          } else {
+            // If map isn't loaded yet, wait for load then remove
+            map.current.once('load', () => {
+              map.current?.remove();
+            });
+          }
+          map.current = null;
+        }
+      } catch (error) {
+        console.warn('Error during map cleanup:', error);
+        // Force null the references even if cleanup failed
+        map.current = null;
+        draw.current = null;
+      }
     };
   }, [mapboxToken, initialCenter, initialZoom, onPolygonChange, toast]);
 
@@ -230,13 +257,28 @@ export const PolygonDrawer = React.forwardRef<
   const retryMapLoad = () => {
     setIsMapLoading(true);
     setMapError(null);
-    if (map.current) {
-      map.current.remove();
+    
+    // Safely cleanup existing map instance
+    try {
+      if (draw.current) {
+        if (map.current && map.current.hasControl(draw.current)) {
+          map.current.removeControl(draw.current);
+        }
+        draw.current = null;
+      }
+      
+      if (map.current) {
+        if (map.current.loaded()) {
+          map.current.remove();
+        }
+        map.current = null;
+      }
+    } catch (error) {
+      console.warn('Error during map cleanup for retry:', error);
       map.current = null;
-    }
-    if (draw.current) {
       draw.current = null;
     }
+    
     // Force re-initialization by triggering the useEffect
     setTimeout(() => {
       setIsMapLoading(true);
