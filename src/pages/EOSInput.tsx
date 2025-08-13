@@ -3,13 +3,15 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "@/components/ui/use-toast";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { calculateAreaHa, type PolygonData } from "@/lib/eos";
 import { kml as kmlToGeoJSON } from "@tmcw/togeojson";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar } from "@/components/ui/calendar";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Calendar as CalendarIcon, Upload, MapPin, Settings, ArrowRight } from "lucide-react";
+import { Calendar as CalendarIcon, Upload, MapPin, Settings, ArrowRight, AlertTriangle } from "lucide-react";
+import { MapSelector } from "@/components/MapSelector";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 // Top 10 colture in Italia (indicative)
 const TOP_CROPS = [
@@ -62,12 +64,7 @@ function setMetaTags(title: string, description: string, canonicalPath: string) 
 const EOSInput: React.FC = () => {
   const navigate = useNavigate();
   const today = new Date();
-  const startDefault = useMemo(() => {
-    const s = new Date(today);
-    s.setFullYear(today.getFullYear() - 1);
-    return s;
-  }, [today]);
-
+  
   const formatDate = (d: Date) => d.toISOString().slice(0, 10);
 
   // Form state
@@ -75,11 +72,41 @@ const EOSInput: React.FC = () => {
   const [irrigation, setIrrigation] = useState<string>("rainfed");
   const [fertilization, setFertilization] = useState<string>("mineral");
   const [plantingDate, setPlantingDate] = useState<string>("");
-  const [dateRange, setDateRange] = useState<{ from?: Date; to?: Date }>({ from: startDefault, to: today });
-
+  
   // Polygon state
   const [polygonData, setPolygonData] = useState<PolygonData>({ geojson: "", coordinates: [], source: "", area_ha: 0 });
   const [polygonOptions, setPolygonOptions] = useState<{ id: string; label: string; coordinates: [number, number][]; area_ha: number }[]>([]);
+  
+  // Mapbox token (in a real app, this would come from Supabase secrets)
+  const [mapboxToken] = useState<string>("");
+
+  // Intelligent date range calculation
+  const intelligentDateRange = useMemo(() => {
+    const endDate = today;
+    let startDate: Date;
+    
+    if (plantingDate) {
+      // If planting date is provided, use it as start (max 12 months ago)
+      const planting = new Date(plantingDate);
+      const maxStartDate = new Date(today);
+      maxStartDate.setMonth(today.getMonth() - 12);
+      
+      startDate = planting > maxStartDate ? planting : maxStartDate;
+    } else {
+      // Default: last 90 days (optimal for EOS)
+      startDate = new Date(today);
+      startDate.setDate(today.getDate() - 90);
+    }
+    
+    return { from: startDate, to: endDate };
+  }, [plantingDate, today]);
+  
+  const [dateRange, setDateRange] = useState<{ from?: Date; to?: Date }>(intelligentDateRange);
+
+  // Update date range when planting date changes
+  useEffect(() => {
+    setDateRange(intelligentDateRange);
+  }, [intelligentDateRange]);
 
   useEffect(() => {
     setMetaTags(
@@ -89,23 +116,25 @@ const EOSInput: React.FC = () => {
     );
   }, []);
 
-  const handleGeoJsonPaste = (raw: string) => {
-    try {
-      const parsed = JSON.parse(raw);
-      if (!parsed || parsed.type !== "Polygon" || !Array.isArray(parsed.coordinates) || !Array.isArray(parsed.coordinates[0])) {
-        throw new Error("Formato GeoJSON non valido: atteso Polygon");
-      }
-      let coords = parsed.coordinates[0] as [number, number][];
-      if (coords.length && (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1])) {
-        coords = [...coords, coords[0]] as any;
-      }
-      const area = calculateAreaHa(coords as any);
-      setPolygonData({ geojson: JSON.stringify({ type: "Polygon", coordinates: [coords] }, null, 2), coordinates: coords as any, source: "GeoJSON incollato", area_ha: area });
-      setPolygonOptions([]);
-      toast({ title: "GeoJSON caricato", description: "Poligono valido." });
-    } catch (e: any) {
-      toast({ title: "Errore GeoJSON", description: e?.message ?? "Errore nel parsing del GeoJSON", variant: "destructive" });
-    }
+  // Handle polygon selection from map
+  const handleMapPolygonSelect = (polygon: {
+    type: string;
+    coordinates: number[][][];
+    source: string;
+    area: number;
+  }) => {
+    const coords = polygon.coordinates[0] as [number, number][];
+    setPolygonData({
+      geojson: JSON.stringify({ type: polygon.type, coordinates: polygon.coordinates }, null, 2),
+      coordinates: coords as any,
+      source: polygon.source,
+      area_ha: polygon.area
+    });
+    setPolygonOptions([]);
+    toast({ 
+      title: "Campo selezionato", 
+      description: `Poligono di ${polygon.area.toFixed(2)} ha dalla mappa` 
+    });
   };
 
   const handleFileUpload = async (file: File) => {
@@ -193,14 +222,40 @@ const EOSInput: React.FC = () => {
     }
   };
 
+  // Validate date range for EOS optimization
+  const validateDateRange = () => {
+    if (!dateRange.from || !dateRange.to) return { isValid: false, warning: "Date mancanti" };
+    
+    const daysDiff = Math.ceil((dateRange.to.getTime() - dateRange.from.getTime()) / (1000 * 60 * 60 * 24));
+    
+    if (daysDiff < 30) {
+      return { isValid: false, warning: "Intervallo troppo breve (min 30 giorni)" };
+    }
+    if (daysDiff > 365) {
+      return { isValid: false, warning: "Intervallo troppo lungo (max 12 mesi)" };
+    }
+    if (daysDiff < 60) {
+      return { isValid: true, warning: "Intervallo breve - potrebbero esserci meno osservazioni" };
+    }
+    
+    return { isValid: true, warning: null };
+  };
+
+  const dateValidation = validateDateRange();
+
   const handleSubmit = () => {
     if (!polygonData.geojson) {
-      toast({ title: "Campo mancante", description: "Seleziona o incolla un poligono del campo.", variant: "destructive" });
+      toast({ title: "Campo mancante", description: "Seleziona il campo sulla mappa o carica un file.", variant: "destructive" });
       return;
     }
 
-    const start_date = formatDate(dateRange.from || startDefault);
-    const end_date = formatDate(dateRange.to || today);
+    if (!dateValidation.isValid) {
+      toast({ title: "Intervallo date non valido", description: dateValidation.warning, variant: "destructive" });
+      return;
+    }
+
+    const start_date = formatDate(dateRange.from!);
+    const end_date = formatDate(dateRange.to!);
 
     localStorage.setItem("eos_polygon", JSON.stringify(polygonData));
     localStorage.setItem(
@@ -217,135 +272,234 @@ const EOSInput: React.FC = () => {
         <div className="max-w-6xl mx-auto px-4 py-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <MapPin className="w-6 h-6 text-foreground" />
-            <h1 className="text-2xl font-bold text-foreground">Analisi campo - Input</h1>
+            <h1 className="text-2xl font-bold text-foreground">Analisi Campo - Input</h1>
           </div>
         </div>
       </header>
 
-      <section className="max-w-6xl mx-auto px-4 py-8 grid lg:grid-cols-3 gap-6">
-        <article className="lg:col-span-2 bg-card rounded-xl border border-border p-6">
-          <h2 className="text-xl font-semibold text-foreground mb-4">1) Carica o incolla il poligono</h2>
-          <div className="flex items-center gap-3 mb-4">
-            <label className="inline-flex items-center gap-2 cursor-pointer text-foreground">
-              <Upload className="w-4 h-4" />
-              <span>File KML / GeoJSON</span>
-              <input
-                type="file"
-                accept=".kml,.geojson,.json,application/json,application/vnd.google-earth.kml+xml"
-                className="hidden"
-                onChange={(e) => e.target.files && e.target.files[0] && handleFileUpload(e.target.files[0])}
-              />
-            </label>
+      <section className="max-w-6xl mx-auto px-4 py-8 space-y-6">
+        {/* Step 1: Interactive Map (Primary option) */}
+        <div className="grid lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2">
+            <MapSelector 
+              onPolygonSelect={handleMapPolygonSelect}
+              mapboxToken={mapboxToken}
+            />
           </div>
-          <Textarea
-            placeholder='Incolla un GeoJSON Polygon (es: {"type":"Polygon","coordinates":[[...]]})'
-            className="min-h-[140px]"
-            onBlur={(e) => e.target.value && handleGeoJsonPaste(e.target.value)}
-          />
 
-          {polygonData.geojson && (
-            <div className="mt-4 text-sm text-muted-foreground">
-              Selezionato: {polygonData.source || "GeoJSON"} • {polygonData.area_ha} ha
-            </div>
-          )}
-
-          {polygonOptions.length > 1 && (
-            <Accordion type="single" collapsible className="mt-4">
-              <AccordionItem value="options">
-                <AccordionTrigger>Più poligoni trovati ({polygonOptions.length})</AccordionTrigger>
-                <AccordionContent>
-                  <div className="grid sm:grid-cols-2 gap-3">
-                    {polygonOptions.map((opt) => (
-                      <Button key={opt.id} variant="secondary" onClick={() => setPolygonData({ geojson: JSON.stringify({ type: "Polygon", coordinates: [opt.coordinates] }, null, 2), coordinates: opt.coordinates as any, source: polygonData.source || "File", area_ha: opt.area_ha })}>
-                        {opt.label} • {opt.area_ha} ha
-                      </Button>
-                    ))}
+          <div className="space-y-6">
+            {/* Current selection display */}
+            {polygonData.geojson && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Campo Selezionato</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Fonte:</span>
+                      <Badge variant="secondary">{polygonData.source}</Badge>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Area:</span>
+                      <Badge variant="default">{polygonData.area_ha.toFixed(2)} ha</Badge>
+                    </div>
                   </div>
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-          )}
-        </article>
+                </CardContent>
+              </Card>
+            )}
 
-        <aside className="bg-card rounded-xl border border-border p-6">
-          <h2 className="text-xl font-semibold text-foreground mb-4">2) Parametri agronomici</h2>
+            {/* Alternative: File Upload */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Alternativa: Carica File</CardTitle>
+                <CardDescription>
+                  Se hai già un file KML o GeoJSON del tuo campo
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <label className="inline-flex items-center gap-2 cursor-pointer text-foreground">
+                  <Upload className="w-4 h-4" />
+                  <span className="text-sm">Carica KML / GeoJSON</span>
+                  <input
+                    type="file"
+                    accept=".kml,.geojson,.json,application/json,application/vnd.google-earth.kml+xml"
+                    className="hidden"
+                    onChange={(e) => e.target.files && e.target.files[0] && handleFileUpload(e.target.files[0])}
+                  />
+                </label>
 
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm mb-1 text-muted-foreground">Coltura</label>
-              <Select value={crop} onValueChange={setCrop}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleziona coltura" />
-                </SelectTrigger>
-                <SelectContent>
-                  {TOP_CROPS.map((c) => (
-                    <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <label className="block text-sm mb-1 text-muted-foreground">Irrigazione</label>
-              <Select value={irrigation} onValueChange={setIrrigation}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Modalità di irrigazione" />
-                </SelectTrigger>
-                <SelectContent>
-                  {IRRIGATION_MODES.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <label className="block text-sm mb-1 text-muted-foreground">Fertilizzazione</label>
-              <Select value={fertilization} onValueChange={setFertilization}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Modalità di fertilizzazione" />
-                </SelectTrigger>
-                <SelectContent>
-                  {FERTILIZATION_MODES.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <label className="block text-sm mb-1 text-muted-foreground">Data di semina</label>
-              <div className="flex items-center gap-2">
-                <CalendarIcon className="w-4 h-4 text-muted-foreground" />
-                <Input type="date" value={plantingDate} onChange={(e) => setPlantingDate(e.target.value)} />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm mb-1 text-muted-foreground">Intervallo di analisi</label>
-              <div className="grid grid-cols-2 gap-2">
-                <Input type="date" value={formatDate(dateRange.from || startDefault)} onChange={(e) => setDateRange((p) => ({ ...p, from: new Date(e.target.value) }))} />
-                <Input type="date" value={formatDate(dateRange.to || today)} onChange={(e) => setDateRange((p) => ({ ...p, to: new Date(e.target.value) }))} />
-              </div>
-            </div>
-
-            <Button className="w-full mt-2" onClick={handleSubmit}>
-              Vai ai risultati
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
-
-            <p className="text-xs text-muted-foreground">La chiave API è gestita in modo sicuro su Supabase (nessun input richiesto).</p>
-          </div>
-        </aside>
-      </section>
-
-      <section className="max-w-6xl mx-auto px-4 pb-10">
-        <div className="bg-secondary/30 border border-border rounded-xl p-4">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Settings className="w-4 h-4" />
-            Suggerimento: per testare un campo reale di girasole, incolla qui il GeoJSON del poligono. Se non lo hai, carica un KML/GeoJSON dal tuo GIS.
+                {polygonOptions.length > 1 && (
+                  <Accordion type="single" collapsible>
+                    <AccordionItem value="options">
+                      <AccordionTrigger className="text-sm">
+                        Più poligoni trovati ({polygonOptions.length})
+                      </AccordionTrigger>
+                      <AccordionContent>
+                        <div className="space-y-2">
+                          {polygonOptions.map((opt) => (
+                            <Button 
+                              key={opt.id} 
+                              variant="ghost" 
+                              size="sm"
+                              className="w-full text-left justify-start"
+                              onClick={() => setPolygonData({ 
+                                geojson: JSON.stringify({ type: "Polygon", coordinates: [opt.coordinates] }, null, 2), 
+                                coordinates: opt.coordinates as any, 
+                                source: polygonData.source || "File", 
+                                area_ha: opt.area_ha 
+                              })}
+                            >
+                              {opt.label} • {opt.area_ha.toFixed(2)} ha
+                            </Button>
+                          ))}
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
+                )}
+              </CardContent>
+            </Card>
           </div>
         </div>
+
+        {/* Step 2: Agronomic Parameters */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Settings className="w-5 h-5 text-primary" />
+              Parametri Agronomici e Date di Analisi
+            </CardTitle>
+            <CardDescription>
+              Configura i dettagli della coltura e l'intervallo di analisi satellitare
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid md:grid-cols-2 gap-6">
+              {/* Left column: Crop parameters */}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Coltura</label>
+                  <Select value={crop} onValueChange={setCrop}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleziona coltura" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TOP_CROPS.map((c) => (
+                        <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Irrigazione</label>
+                  <Select value={irrigation} onValueChange={setIrrigation}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Modalità di irrigazione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {IRRIGATION_MODES.map((m) => (
+                        <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Fertilizzazione</label>
+                  <Select value={fertilization} onValueChange={setFertilization}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Modalità di fertilizzazione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {FERTILIZATION_MODES.map((m) => (
+                        <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Right column: Date parameters */}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Data di semina (opzionale)</label>
+                  <div className="flex items-center gap-2">
+                    <CalendarIcon className="w-4 h-4 text-muted-foreground" />
+                    <Input 
+                      type="date" 
+                      value={plantingDate} 
+                      onChange={(e) => setPlantingDate(e.target.value)}
+                      placeholder="YYYY-MM-DD"
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Se fornita, l'intervallo partirà da questa data
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Intervallo di analisi</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input 
+                      type="date" 
+                      value={formatDate(dateRange.from!)} 
+                      onChange={(e) => setDateRange((p) => ({ ...p, from: new Date(e.target.value) }))} 
+                    />
+                    <Input 
+                      type="date" 
+                      value={formatDate(dateRange.to!)} 
+                      onChange={(e) => setDateRange((p) => ({ ...p, to: new Date(e.target.value) }))} 
+                    />
+                  </div>
+                  
+                  {dateValidation.warning && (
+                    <Alert className={`mt-2 ${dateValidation.isValid ? 'border-orange-200' : 'border-destructive'}`}>
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription className="text-sm">
+                        {dateValidation.warning}
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Intervallo ottimale: 60-365 giorni. Date intelligenti calcolate automaticamente.
+                  </p>
+                </div>
+
+                <div className="pt-4">
+                  <Button 
+                    className="w-full" 
+                    onClick={handleSubmit}
+                    disabled={!polygonData.geojson || !dateValidation.isValid}
+                  >
+                    Avvia Analisi EOS
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                  
+                  <p className="text-xs text-muted-foreground mt-2 text-center">
+                    L'API EOS è gestita in modo sicuro tramite Supabase
+                  </p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Tips section */}
+        <Alert>
+          <Settings className="h-4 w-4" />
+          <AlertDescription>
+            <strong>Suggerimenti per una migliore analisi:</strong>
+            <ul className="mt-2 space-y-1 text-sm">
+              <li>• Usa la mappa interattiva per maggiore precisione</li>
+              <li>• Intervalli di 60-90 giorni forniscono i migliori risultati</li>
+              <li>• La data di semina aiuta a ottimizzare automaticamente le date</li>
+              <li>• Aree tra 1-100 ettari sono ideali per l'analisi EOS</li>
+            </ul>
+          </AlertDescription>
+        </Alert>
       </section>
     </main>
   );

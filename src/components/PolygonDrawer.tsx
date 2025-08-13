@@ -1,0 +1,257 @@
+import React, { useRef, useEffect, useState } from 'react';
+import mapboxgl from 'mapbox-gl';
+import MapboxDraw from '@mapbox/mapbox-gl-draw';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Trash2, Square, Info } from 'lucide-react';
+import { 
+  MAPBOX_STYLE, 
+  DEFAULT_CENTER, 
+  DEFAULT_ZOOM,
+  validatePolygon,
+  calculatePolygonArea,
+  polygonToGeoJSON
+} from '@/lib/mapbox';
+import { useToast } from '@/hooks/use-toast';
+
+// Import Mapbox CSS
+import 'mapbox-gl/dist/mapbox-gl.css';
+import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
+
+interface PolygonDrawerProps {
+  onPolygonChange: (polygon: {
+    type: string;
+    coordinates: number[][][];
+  } | null, area?: number) => void;
+  mapboxToken?: string;
+  initialCenter?: [number, number];
+  initialZoom?: number;
+}
+
+export const PolygonDrawer = React.forwardRef<
+  { flyToLocation: (center: [number, number], bbox?: [number, number, number, number]) => void },
+  PolygonDrawerProps
+>(({
+  onPolygonChange,
+  mapboxToken,
+  initialCenter = DEFAULT_CENTER,
+  initialZoom = DEFAULT_ZOOM
+}, ref) => {
+  const mapContainer = useRef<HTMLDivElement>(null);
+  const map = useRef<mapboxgl.Map | null>(null);
+  const draw = useRef<MapboxDraw | null>(null);
+  const [area, setArea] = useState<number | null>(null);
+  const [isValidPolygon, setIsValidPolygon] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    if (!mapContainer.current || !mapboxToken) return;
+
+    // Initialize map
+    mapboxgl.accessToken = mapboxToken;
+    
+    map.current = new mapboxgl.Map({
+      container: mapContainer.current,
+      style: MAPBOX_STYLE,
+      center: initialCenter,
+      zoom: initialZoom,
+      attributionControl: false
+    });
+
+    // Add navigation controls
+    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
+    // Initialize drawing tools
+    draw.current = new MapboxDraw({
+      displayControlsDefault: false,
+      controls: {
+        polygon: true,
+        trash: true
+      },
+      defaultMode: 'draw_polygon'
+    });
+
+    map.current.addControl(draw.current, 'top-left');
+
+    // Handle drawing events
+    const handlePolygonUpdate = () => {
+      if (!draw.current) return;
+
+      const data = draw.current.getAll();
+      const polygons = data.features.filter(f => f.geometry.type === 'Polygon');
+
+      if (polygons.length === 0) {
+        setArea(null);
+        setIsValidPolygon(false);
+        setValidationError(null);
+        onPolygonChange(null);
+        return;
+      }
+
+      // Only allow one polygon
+      if (polygons.length > 1) {
+        // Remove all but the last polygon
+        const toDelete = polygons.slice(0, -1).map(p => p.id);
+        draw.current.delete(toDelete as string[]);
+        toast({
+          title: "Un solo poligono",
+          description: "È possibile disegnare solo un campo alla volta",
+          variant: "default"
+        });
+      }
+
+      const polygon = polygons[polygons.length - 1];
+      const geometry = polygon.geometry as any; // MapboxDraw polygon geometry
+      const coordinates = geometry.coordinates[0];
+
+      // Validate polygon
+      const validation = validatePolygon(coordinates);
+      setIsValidPolygon(validation.isValid);
+      setValidationError(validation.error || null);
+      setArea(validation.area || null);
+
+      if (validation.isValid) {
+        const geoJsonPolygon = polygonToGeoJSON(coordinates);
+        onPolygonChange(geoJsonPolygon, validation.area);
+      } else {
+        onPolygonChange(null);
+        if (validation.error) {
+          toast({
+            title: "Poligono non valido",
+            description: validation.error,
+            variant: "destructive"
+          });
+        }
+      }
+    };
+
+    map.current.on('draw.create', handlePolygonUpdate);
+    map.current.on('draw.update', handlePolygonUpdate);
+    map.current.on('draw.delete', handlePolygonUpdate);
+
+    return () => {
+      map.current?.remove();
+    };
+  }, [mapboxToken, initialCenter, initialZoom, onPolygonChange, toast]);
+
+  // Expose flyToLocation function to parent via ref
+  React.useImperativeHandle(ref, () => ({
+    flyToLocation: (center: [number, number], bbox?: [number, number, number, number]) => {
+      if (!map.current) return;
+
+      if (bbox) {
+        map.current.fitBounds([
+          [bbox[0], bbox[1]], 
+          [bbox[2], bbox[3]]
+        ], { 
+          padding: 50,
+          maxZoom: 15 
+        });
+      } else {
+        map.current.flyTo({
+          center,
+          zoom: 14,
+          duration: 1500
+        });
+      }
+    }
+  }));
+
+
+  const clearPolygon = () => {
+    if (draw.current) {
+      draw.current.deleteAll();
+      setArea(null);
+      setIsValidPolygon(false);
+      setValidationError(null);
+      onPolygonChange(null);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card className="relative h-96 overflow-hidden">
+        <div ref={mapContainer} className="w-full h-full" />
+        
+        {/* Info overlay */}
+        <div className="absolute top-4 left-4 right-4 z-10">
+          <Card className="p-3 bg-background/95 backdrop-blur-sm">
+            <div className="flex items-start gap-2">
+              <Info className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+              <div className="text-sm">
+                <p className="font-medium mb-1">Come disegnare il campo:</p>
+                <p className="text-muted-foreground">
+                  Clicca sulla mappa per iniziare a disegnare il perimetro del campo. 
+                  Fai doppio click per completare il poligono.
+                </p>
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        {/* Area display */}
+        {area !== null && (
+          <div className="absolute bottom-4 left-4 z-10">
+            <Badge variant={isValidPolygon ? "default" : "destructive"} className="text-sm">
+              Area: {area.toFixed(2)} ha
+              {!isValidPolygon && validationError && (
+                <span className="ml-2">• {validationError}</span>
+              )}
+            </Badge>
+          </div>
+        )}
+
+        {/* Clear button */}
+        {area !== null && (
+          <div className="absolute bottom-4 right-4 z-10">
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={clearPolygon}
+              className="shadow-lg"
+            >
+              <Trash2 className="h-4 w-4 mr-1" />
+              Cancella
+            </Button>
+          </div>
+        )}
+      </Card>
+
+      {!mapboxToken && (
+        <Card className="p-4 border-destructive">
+          <div className="flex items-center gap-2 text-destructive">
+            <Info className="h-4 w-4" />
+            <span className="text-sm font-medium">
+              Token Mapbox richiesto per utilizzare la mappa interattiva
+            </span>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+});
+
+// Export the flyToLocation function so it can be used by parent components
+export const useFlyToLocation = (mapRef: React.MutableRefObject<mapboxgl.Map | null>) => {
+  return (center: [number, number], bbox?: [number, number, number, number]) => {
+    if (!mapRef.current) return;
+
+    if (bbox) {
+      mapRef.current.fitBounds([
+        [bbox[0], bbox[1]], 
+        [bbox[2], bbox[3]]
+      ], { 
+        padding: 50,
+        maxZoom: 15 
+      });
+    } else {
+      mapRef.current.flyTo({
+        center,
+        zoom: 14,
+        duration: 1500
+      });
+    }
+  };
+};
