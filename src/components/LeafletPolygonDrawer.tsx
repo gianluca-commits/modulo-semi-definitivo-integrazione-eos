@@ -47,74 +47,47 @@ const LeafletPolygonDrawer = forwardRef<PolygonDrawerRef, PolygonDrawerProps>(
         setValidationError(validation.error || '');
         
         if (validation.isValid && validation.area) {
-          setArea(validation.area);
+          const areaHa = validation.area;
+          setArea(areaHa);
           setHasPolygon(true);
-          onPolygonChange({
-            coordinates,
-            area: validation.area
-          });
-          toast({
-            title: "Poligono valido",
-            description: `Area: ${validation.area.toFixed(2)} ettari`
-          });
+          onPolygonChange({ coordinates, area: areaHa });
         } else {
           setArea(0);
           setHasPolygon(false);
           onPolygonChange(null);
-          toast({
-            title: "Poligono non valido",
-            description: validation.error,
-            variant: "destructive"
-          });
         }
       }
     };
 
-    const handleCreated = useCallback((e: L.DrawEvents.Created) => {
-      const layer = e.layer;
-      if (featureGroupRef.current) {
-        // Clear existing polygons (only allow one)
-        featureGroupRef.current.clearLayers();
-        featureGroupRef.current.addLayer(layer);
-        processPolygon(layer);
-      }
+    const handleCreated = useCallback((e: any) => {
+      console.log('Polygon created:', e);
+      processPolygon(e.layer);
     }, []);
 
-    const handleEdited = useCallback((e: L.DrawEvents.Edited) => {
-      const layers = e.layers;
-      layers.eachLayer((layer: L.Layer) => {
+    const handleEdited = useCallback((e: any) => {
+      console.log('Polygon edited:', e);
+      e.layers.eachLayer((layer: L.Layer) => {
         processPolygon(layer);
       });
     }, []);
 
-    const handleDeleted = useCallback((e: L.DrawEvents.Deleted) => {
+    const handleDeleted = useCallback((e: any) => {
+      console.log('Polygon deleted:', e);
       setArea(0);
       setIsValidPolygon(false);
       setValidationError('');
       setHasPolygon(false);
       onPolygonChange(null);
-      toast({
-        title: "Poligono eliminato",
-        description: "Il poligono è stato rimosso dalla mappa"
-      });
-    }, [onPolygonChange, toast]);
+    }, []);
 
     const clearPolygon = () => {
       if (featureGroupRef.current) {
         featureGroupRef.current.clearLayers();
-        setArea(0);
-        setIsValidPolygon(false);
-        setValidationError('');
-        setHasPolygon(false);
-        onPolygonChange(null);
-        toast({
-          title: "Poligono eliminato",
-          description: "Il poligono è stato rimosso dalla mappa"
-        });
+        handleDeleted({ layers: [] });
       }
     };
 
-    // MapController component to initialize map references and drawing controls
+    // MapController component that uses the useMap hook
     const MapController = () => {
       const map = useMap();
       
@@ -184,11 +157,7 @@ const LeafletPolygonDrawer = forwardRef<PolygonDrawerRef, PolygonDrawerProps>(
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               />
-              <FeatureGroup
-                ref={(ref) => {
-                  featureGroupRef.current = ref;
-                }}
-              />
+              <FeatureGroup ref={(ref) => { featureGroupRef.current = ref; }} />
               <MapController />
             </MapContainer>
           </div>
