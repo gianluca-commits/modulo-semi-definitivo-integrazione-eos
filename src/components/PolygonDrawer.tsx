@@ -76,10 +76,11 @@ export const PolygonDrawer = React.forwardRef<
         
         map.current = new mapboxgl.Map({
           container: container,
-          style: MAPBOX_STYLE,
+          style: "mapbox://styles/mapbox/satellite-v9",
           center: initialCenter,
           zoom: initialZoom,
-          attributionControl: false
+          attributionControl: false,
+          preserveDrawingBuffer: true
         });
 
         console.log('Map created, waiting for load event...');
@@ -191,26 +192,25 @@ export const PolygonDrawer = React.forwardRef<
     return () => {
       // Safely cleanup map and drawing controls
       try {
-        if (draw.current) {
-          // Remove drawing controls first
-          if (map.current && map.current.hasControl(draw.current)) {
+        if (map.current) {
+          // Remove all event listeners first
+          map.current.off('draw.create', undefined);
+          map.current.off('draw.update', undefined);
+          map.current.off('draw.delete', undefined);
+          map.current.off('load', undefined);
+          map.current.off('error', undefined);
+          
+          // Remove drawing controls if they exist
+          if (draw.current && map.current.hasControl(draw.current)) {
             map.current.removeControl(draw.current);
           }
-          draw.current = null;
-        }
-        
-        if (map.current) {
-          // Check if map is loaded before removing
-          if (map.current.loaded()) {
-            map.current.remove();
-          } else {
-            // If map isn't loaded yet, wait for load then remove
-            map.current.once('load', () => {
-              map.current?.remove();
-            });
-          }
+          
+          // Remove map
+          map.current.remove();
           map.current = null;
         }
+        
+        draw.current = null;
       } catch (error) {
         console.warn('Error during map cleanup:', error);
         // Force null the references even if cleanup failed

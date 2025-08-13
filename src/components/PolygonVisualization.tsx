@@ -60,7 +60,8 @@ export const PolygonVisualization: React.FC<PolygonVisualizationProps> = ({
         dragPan: true,
         scrollZoom: true,
         doubleClickZoom: true,
-        touchZoomRotate: true
+        touchZoomRotate: true,
+        preserveDrawingBuffer: true
       });
 
       map.current.addControl(new mapboxgl.NavigationControl(), "top-right");
@@ -127,8 +128,17 @@ export const PolygonVisualization: React.FC<PolygonVisualizationProps> = ({
     }
 
     return () => {
-      if (map.current) {
-        map.current.remove();
+      try {
+        if (map.current) {
+          // Remove event listeners
+          map.current.off('load', undefined);
+          
+          // Remove map
+          map.current.remove();
+          map.current = null;
+        }
+      } catch (error) {
+        console.warn('Error during polygon visualization cleanup:', error);
         map.current = null;
       }
     };
