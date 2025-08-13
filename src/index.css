@@ -108,6 +108,19 @@ All colors MUST be HSL.
   }
 }
 
+/* Ensure MapboxDraw controls are visible */
+.mapboxgl-ctrl-group {
+  visibility: visible !important;
+  opacity: 1 !important;
+  display: block !important;
+}
+
+.mapbox-gl-draw_ctrl-draw-btn {
+  visibility: visible !important;
+  opacity: 1 !important;
+  display: block !important;
+}
+
 /* Print styles */
 @media print {
   @page { margin: 12mm; }

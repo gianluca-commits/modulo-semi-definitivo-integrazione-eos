@@ -131,6 +131,17 @@ export const PolygonDrawer = React.forwardRef<{
         touchBuffer: 25
       });
       map.addControl(draw.current, 'top-left');
+      
+      console.log('Draw controls added to map. Checking if visible...');
+      
+      // Check if controls are in DOM
+      setTimeout(() => {
+        const drawControls = document.querySelector('.mapboxgl-ctrl-group');
+        console.log('Draw controls in DOM:', drawControls ? 'YES' : 'NO');
+        if (drawControls) {
+          console.log('Draw controls styles:', window.getComputedStyle(drawControls));
+        }
+      }, 100);
 
       // Add event listeners
       map.on('draw.create', handlePolygonUpdate);

@@ -95,11 +95,11 @@ export const AddressSearch: React.FC<AddressSearchProps> = ({
     // Call the parent callback
     onLocationSelect(suggestion.center, suggestion.bbox);
     
-    // Reset flag after a short delay to allow normal searching again
+    // Reset flag after a longer delay to prevent search retriggering
     setTimeout(() => {
       setIsSelectingAddress(false);
       console.log('Address selection completed, re-enabling search');
-    }, 1000);
+    }, 2000);
   };
 
   return (
