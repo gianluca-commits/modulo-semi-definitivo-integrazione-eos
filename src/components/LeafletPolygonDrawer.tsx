@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef, us
 import { MapContainer, TileLayer, FeatureGroup, useMap } from 'react-leaflet';
 import L, { LatLng } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import 'leaflet-draw/dist/leaflet.draw.css';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
