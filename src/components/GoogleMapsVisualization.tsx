@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useMemo } from 'react';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from './ui/card';
 import { Badge } from './ui/badge';
+import { googleMapsLoader } from '@/lib/googleMapsLoader';
 
 interface PolygonVisualizationProps {
   polygon: {
@@ -39,54 +40,54 @@ const GoogleMapsVisualization: React.FC<PolygonVisualizationProps> = ({
   }, [polygon.coordinates]);
 
   useEffect(() => {
-    const initializeMap = () => {
-      if (!mapRef.current || !window.google?.maps || !googleMapsCoordinates.length) return;
+    const initializeMap = async () => {
+      if (!mapRef.current || !googleMapsCoordinates.length) return;
 
-      // Initialize map
-      const map = new google.maps.Map(mapRef.current, {
-        center: center,
-        zoom: 14,
-        mapTypeId: google.maps.MapTypeId.SATELLITE,
-        mapTypeControl: true,
-        streetViewControl: false,
-        fullscreenControl: true,
-        gestureHandling: 'cooperative'
-      });
+      try {
+        // Wait for Google Maps to be fully loaded
+        await googleMapsLoader.load();
+        
+        // Double check that all required APIs are available
+        if (!window.google?.maps?.Map || !window.google?.maps?.MapTypeId || !window.google?.maps?.Polygon) {
+          console.error('Google Maps API not fully loaded for visualization');
+          return;
+        }
 
-      mapInstanceRef.current = map;
+        // Initialize map
+        const map = new google.maps.Map(mapRef.current, {
+          center: center,
+          zoom: 14,
+          mapTypeId: google.maps.MapTypeId.SATELLITE,
+          mapTypeControl: true,
+          streetViewControl: false,
+          fullscreenControl: true,
+          gestureHandling: 'cooperative'
+        });
 
-      // Create polygon
-      const polygonPath = new google.maps.Polygon({
-        paths: googleMapsCoordinates,
-        strokeColor: 'hsl(var(--primary))',
-        strokeOpacity: 1,
-        strokeWeight: 2,
-        fillColor: 'hsl(var(--primary))',
-        fillOpacity: 0.3,
-      });
+        mapInstanceRef.current = map;
 
-      polygonPath.setMap(map);
+        // Create polygon
+        const polygonPath = new google.maps.Polygon({
+          paths: googleMapsCoordinates,
+          strokeColor: 'hsl(var(--primary))',
+          strokeOpacity: 1,
+          strokeWeight: 2,
+          fillColor: 'hsl(var(--primary))',
+          fillOpacity: 0.3,
+        });
 
-      // Fit bounds to polygon
-      const bounds = new google.maps.LatLngBounds();
-      googleMapsCoordinates.forEach(coord => bounds.extend(coord));
-      map.fitBounds(bounds);
+        polygonPath.setMap(map);
+
+        // Fit bounds to polygon
+        const bounds = new google.maps.LatLngBounds();
+        googleMapsCoordinates.forEach(coord => bounds.extend(coord));
+        map.fitBounds(bounds);
+      } catch (error) {
+        console.error('Failed to initialize Google Maps visualization:', error);
+      }
     };
 
-    // Check if Google Maps is already loaded
-    if (window.google?.maps) {
-      initializeMap();
-    } else {
-      // Wait for Google Maps to load
-      const checkGoogleMaps = setInterval(() => {
-        if (window.google?.maps) {
-          clearInterval(checkGoogleMaps);
-          initializeMap();
-        }
-      }, 100);
-
-      return () => clearInterval(checkGoogleMaps);
-    }
+    initializeMap();
   }, [center, googleMapsCoordinates]);
 
   return (
