@@ -15,9 +15,7 @@ import {
 } from '@/lib/mapbox';
 import { useToast } from '@/hooks/use-toast';
 
-// Import Mapbox CSS
-import 'mapbox-gl/dist/mapbox-gl.css';
-import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
+// Mapbox CSS now imported globally in index.css
 
 interface PolygonDrawerProps {
   onPolygonChange: (polygon: {
@@ -44,92 +42,151 @@ export const PolygonDrawer = React.forwardRef<
   const [area, setArea] = useState<number | null>(null);
   const [isValidPolygon, setIsValidPolygon] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [isMapLoading, setIsMapLoading] = useState(true);
+  const [mapError, setMapError] = useState<string | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
-    if (!mapContainer.current || !mapboxToken) return;
-
-    // Initialize map
-    mapboxgl.accessToken = mapboxToken;
-    
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: MAPBOX_STYLE,
-      center: initialCenter,
-      zoom: initialZoom,
-      attributionControl: false
-    });
-
-    // Add navigation controls
-    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
-
-    // Initialize drawing tools
-    draw.current = new MapboxDraw({
-      displayControlsDefault: false,
-      controls: {
-        polygon: true,
-        trash: true
-      },
-      defaultMode: 'draw_polygon'
-    });
-
-    map.current.addControl(draw.current, 'top-left');
-
-    // Handle drawing events
-    const handlePolygonUpdate = () => {
-      if (!draw.current) return;
-
-      const data = draw.current.getAll();
-      const polygons = data.features.filter(f => f.geometry.type === 'Polygon');
-
-      if (polygons.length === 0) {
-        setArea(null);
-        setIsValidPolygon(false);
-        setValidationError(null);
-        onPolygonChange(null);
-        return;
+    if (!mapContainer.current || !mapboxToken) {
+      setIsMapLoading(false);
+      if (!mapboxToken) {
+        setMapError("Token Mapbox non disponibile");
       }
+      return;
+    }
 
-      // Only allow one polygon
-      if (polygons.length > 1) {
-        // Remove all but the last polygon
-        const toDelete = polygons.slice(0, -1).map(p => p.id);
-        draw.current.delete(toDelete as string[]);
-        toast({
-          title: "Un solo poligono",
-          description: "È possibile disegnare solo un campo alla volta",
-          variant: "default"
-        });
-      }
-
-      const polygon = polygons[polygons.length - 1];
-      const geometry = polygon.geometry as any; // MapboxDraw polygon geometry
-      const coordinates = geometry.coordinates[0];
-
-      // Validate polygon
-      const validation = validatePolygon(coordinates);
-      setIsValidPolygon(validation.isValid);
-      setValidationError(validation.error || null);
-      setArea(validation.area || null);
-
-      if (validation.isValid) {
-        const geoJsonPolygon = polygonToGeoJSON(coordinates);
-        onPolygonChange(geoJsonPolygon, validation.area);
-      } else {
-        onPolygonChange(null);
-        if (validation.error) {
-          toast({
-            title: "Poligono non valido",
-            description: validation.error,
-            variant: "destructive"
+    const initializeMap = () => {
+      try {
+        console.log('Initializing map with token:', mapboxToken.substring(0, 20) + '...');
+        
+        // Ensure container has dimensions
+        const container = mapContainer.current;
+        if (!container || container.offsetWidth === 0 || container.offsetHeight === 0) {
+          console.warn('Map container has zero dimensions:', { 
+            width: container?.offsetWidth, 
+            height: container?.offsetHeight 
           });
+          setMapError("Container della mappa ha dimensioni non valide");
+          setIsMapLoading(false);
+          return;
         }
+
+        // Initialize map
+        mapboxgl.accessToken = mapboxToken;
+        
+        map.current = new mapboxgl.Map({
+          container: container,
+          style: MAPBOX_STYLE,
+          center: initialCenter,
+          zoom: initialZoom,
+          attributionControl: false
+        });
+
+        console.log('Map created, waiting for load event...');
+      } catch (error) {
+        console.error('Error creating map:', error);
+        setMapError(`Errore inizializzazione mappa: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`);
+        setIsMapLoading(false);
+        return;
       }
     };
 
-    map.current.on('draw.create', handlePolygonUpdate);
-    map.current.on('draw.update', handlePolygonUpdate);
-    map.current.on('draw.delete', handlePolygonUpdate);
+    const setupMapControls = () => {
+      if (!map.current) return;
+      
+      // Wait for map to load before adding controls
+      map.current.on('load', () => {
+        console.log('Map loaded successfully');
+        setIsMapLoading(false);
+        setMapError(null);
+        
+        // Add navigation controls
+        if (map.current) {
+          map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+          
+          // Initialize drawing tools
+          draw.current = new MapboxDraw({
+            displayControlsDefault: false,
+            controls: {
+              polygon: true,
+              trash: true
+            },
+            defaultMode: 'draw_polygon'
+          });
+
+          map.current.addControl(draw.current, 'top-left');
+          
+          // Handle drawing events
+          const handlePolygonUpdate = () => {
+            if (!draw.current) return;
+
+            const data = draw.current.getAll();
+            const polygons = data.features.filter(f => f.geometry.type === 'Polygon');
+
+            if (polygons.length === 0) {
+              setArea(null);
+              setIsValidPolygon(false);
+              setValidationError(null);
+              onPolygonChange(null);
+              return;
+            }
+
+            // Only allow one polygon
+            if (polygons.length > 1) {
+              // Remove all but the last polygon
+              const toDelete = polygons.slice(0, -1).map(p => p.id);
+              draw.current.delete(toDelete as string[]);
+              toast({
+                title: "Un solo poligono",
+                description: "È possibile disegnare solo un campo alla volta",
+                variant: "default"
+              });
+            }
+
+            const polygon = polygons[polygons.length - 1];
+            const geometry = polygon.geometry as any; // MapboxDraw polygon geometry
+            const coordinates = geometry.coordinates[0];
+
+            // Validate polygon
+            const validation = validatePolygon(coordinates);
+            setIsValidPolygon(validation.isValid);
+            setValidationError(validation.error || null);
+            setArea(validation.area || null);
+
+            if (validation.isValid) {
+              const geoJsonPolygon = polygonToGeoJSON(coordinates);
+              onPolygonChange(geoJsonPolygon, validation.area);
+            } else {
+              onPolygonChange(null);
+              if (validation.error) {
+                toast({
+                  title: "Poligono non valido",
+                  description: validation.error,
+                  variant: "destructive"
+                });
+              }
+            }
+          };
+
+          map.current.on('draw.create', handlePolygonUpdate);
+          map.current.on('draw.update', handlePolygonUpdate);
+          map.current.on('draw.delete', handlePolygonUpdate);
+        }
+      });
+
+      map.current.on('error', (e) => {
+        console.error('Map error:', e);
+        setMapError(`Errore caricamento mappa: ${e.error?.message || 'Errore sconosciuto'}`);
+        setIsMapLoading(false);
+      });
+    };
+
+    // Initialize with a small delay to ensure DOM is ready
+    setTimeout(() => {
+      initializeMap();
+      setupMapControls();
+    }, 100);
+
 
     return () => {
       map.current?.remove();
@@ -170,10 +227,60 @@ export const PolygonDrawer = React.forwardRef<
     }
   };
 
+  const retryMapLoad = () => {
+    setIsMapLoading(true);
+    setMapError(null);
+    if (map.current) {
+      map.current.remove();
+      map.current = null;
+    }
+    if (draw.current) {
+      draw.current = null;
+    }
+    // Force re-initialization by triggering the useEffect
+    setTimeout(() => {
+      setIsMapLoading(true);
+    }, 100);
+  };
+
   return (
     <div className="space-y-4">
       <Card className="relative h-96 overflow-hidden">
-        <div ref={mapContainer} className="w-full h-full" />
+        <div 
+          ref={mapContainer} 
+          className="w-full h-full min-h-96"
+          style={{ minHeight: '384px' }}
+        />
+        
+        {/* Loading overlay */}
+        {isMapLoading && (
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-20">
+            <div className="text-center space-y-2">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+              <p className="text-sm text-muted-foreground">Caricamento mappa...</p>
+            </div>
+          </div>
+        )}
+        
+        {/* Error overlay */}
+        {mapError && (
+          <div className="absolute inset-0 bg-background/95 backdrop-blur-sm flex items-center justify-center z-20">
+            <div className="text-center space-y-4 p-6">
+              <div className="text-destructive">
+                <Info className="h-8 w-8 mx-auto mb-2" />
+                <p className="font-medium">Errore caricamento mappa</p>
+                <p className="text-sm text-muted-foreground mt-1">{mapError}</p>
+              </div>
+              <Button 
+                onClick={retryMapLoad}
+                size="sm"
+                variant="outline"
+              >
+                Riprova
+              </Button>
+            </div>
+          </div>
+        )}
         
         {/* Info overlay */}
         <div className="absolute top-4 left-4 right-4 z-10">
