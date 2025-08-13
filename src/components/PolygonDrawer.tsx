@@ -6,12 +6,14 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Trash2, Square, Info } from 'lucide-react';
 import { 
-  MAPBOX_STYLE, 
   DEFAULT_CENTER, 
   DEFAULT_ZOOM,
   validatePolygon,
   calculatePolygonArea,
-  polygonToGeoJSON
+  polygonToGeoJSON,
+  createMapboxMap,
+  isContainerReady,
+  validateMapboxToken
 } from '@/lib/mapbox';
 import { useToast } from '@/hooks/use-toast';
 
@@ -59,31 +61,29 @@ export const PolygonDrawer = React.forwardRef<
       try {
         console.log('Initializing map with token:', mapboxToken.substring(0, 20) + '...');
         
-        // Ensure container has dimensions
+        // Validate token format
+        if (!validateMapboxToken(mapboxToken)) {
+          setMapError("Token Mapbox non valido");
+          setIsMapLoading(false);
+          return;
+        }
+        
         const container = mapContainer.current;
-        if (!container || container.offsetWidth === 0 || container.offsetHeight === 0) {
-          console.warn('Map container has zero dimensions:', { 
+        if (!isContainerReady(container)) {
+          console.warn('Map container not ready:', { 
             width: container?.offsetWidth, 
-            height: container?.offsetHeight 
+            height: container?.offsetHeight,
+            connected: container?.isConnected 
           });
-          setMapError("Container della mappa ha dimensioni non valide");
+          setMapError("Container della mappa non pronto");
           setIsMapLoading(false);
           return;
         }
 
-        // Initialize map
-        mapboxgl.accessToken = mapboxToken;
-        
-        map.current = new mapboxgl.Map({
-          container: container,
-          style: "mapbox://styles/mapbox/satellite-v9",
-          center: initialCenter,
-          zoom: initialZoom,
-          attributionControl: false,
-          preserveDrawingBuffer: true
-        });
-
+        // Create map using standardized function
+        map.current = createMapboxMap(container!, mapboxToken, initialCenter, initialZoom);
         console.log('Map created, waiting for load event...');
+        
       } catch (error) {
         console.error('Error creating map:', error);
         setMapError(`Errore inizializzazione mappa: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`);
@@ -190,30 +190,62 @@ export const PolygonDrawer = React.forwardRef<
 
 
     return () => {
-      // Safely cleanup map and drawing controls
+      // Properly cleanup map and drawing controls following Mapbox best practices
       try {
         if (map.current) {
-          // Remove all event listeners first
-          map.current.off('draw.create', undefined);
-          map.current.off('draw.update', undefined);
-          map.current.off('draw.delete', undefined);
-          map.current.off('load', undefined);
-          map.current.off('error', undefined);
+          // Remove specific event listeners first
+          const eventsToRemove = ['draw.create', 'draw.update', 'draw.delete', 'load', 'error'];
+          eventsToRemove.forEach(event => {
+            try {
+              map.current?.off(event as any, undefined as any);
+            } catch (e) {
+              console.warn(`Failed to remove ${event} listener:`, e);
+            }
+          });
           
-          // Remove drawing controls if they exist
-          if (draw.current && map.current.hasControl(draw.current)) {
-            map.current.removeControl(draw.current);
+          // Remove MapboxDraw control if it exists
+          if (draw.current) {
+            try {
+              if (map.current.hasControl(draw.current)) {
+                map.current.removeControl(draw.current);
+              }
+            } catch (e) {
+              console.warn('Error removing draw control:', e);
+            }
+            draw.current = null;
           }
           
-          // Remove map
-          map.current.remove();
-          map.current = null;
+          // Remove navigation control if it exists
+          try {
+            const controls = map.current.getContainer().querySelectorAll('.mapboxgl-control-container');
+            controls.forEach(control => {
+              try {
+                control.remove();
+              } catch (e) {
+                console.warn('Error removing control:', e);
+              }
+            });
+          } catch (e) {
+            console.warn('Error removing controls:', e);
+          }
+          
+          // Wait a moment then remove map
+          setTimeout(() => {
+            try {
+              if (map.current && map.current.getContainer()) {
+                map.current.remove();
+              }
+            } catch (e) {
+              console.warn('Error removing map:', e);
+            } finally {
+              map.current = null;
+            }
+          }, 50);
         }
         
-        draw.current = null;
       } catch (error) {
         console.warn('Error during map cleanup:', error);
-        // Force null the references even if cleanup failed
+        // Force cleanup even if error occurred
         map.current = null;
         draw.current = null;
       }

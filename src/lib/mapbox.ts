@@ -1,13 +1,66 @@
 import mapboxgl from 'mapbox-gl';
 
-// Mapbox configuration
-export const MAPBOX_STYLE = 'mapbox://styles/mapbox/satellite-streets-v12';
+// Mapbox configuration - standardized style for all components
+export const MAPBOX_STYLE = 'mapbox://styles/mapbox/satellite-v9';
 export const DEFAULT_CENTER: [number, number] = [12.4964, 41.9028]; // Rome, Italy
 export const DEFAULT_ZOOM = 6;
 
-// Initialize Mapbox access token (will be set via Supabase secrets)
-export const initializeMapbox = (token: string) => {
-  mapboxgl.accessToken = token;
+// Token validation and initialization
+export const validateMapboxToken = (token: string): boolean => {
+  return token && token.startsWith('pk.') && token.length > 20;
+};
+
+// Safe initialization with validation
+export const initializeMapbox = (token: string): boolean => {
+  if (!validateMapboxToken(token)) {
+    console.error('Invalid Mapbox token format');
+    return false;
+  }
+  
+  try {
+    mapboxgl.accessToken = token;
+    return true;
+  } catch (error) {
+    console.error('Failed to initialize Mapbox token:', error);
+    return false;
+  }
+};
+
+// Check if container is ready for map
+export const isContainerReady = (container: HTMLElement | null): boolean => {
+  return !!(container && 
+    container.offsetWidth > 0 && 
+    container.offsetHeight > 0 &&
+    container.isConnected);
+};
+
+// Create map with standardized options
+export const createMapboxMap = (
+  container: HTMLElement,
+  token: string,
+  center: [number, number] = DEFAULT_CENTER,
+  zoom: number = DEFAULT_ZOOM
+): mapboxgl.Map | null => {
+  if (!initializeMapbox(token)) {
+    throw new Error('Failed to initialize Mapbox token');
+  }
+  
+  if (!isContainerReady(container)) {
+    throw new Error('Container not ready for map initialization');
+  }
+
+  return new mapboxgl.Map({
+    container,
+    style: MAPBOX_STYLE,
+    center,
+    zoom,
+    attributionControl: false,
+    preserveDrawingBuffer: true,
+    // Performance optimizations
+    renderWorldCopies: false,
+    maxZoom: 20,
+    minZoom: 1
+  });
 };
 
 // Geocoding function for address search

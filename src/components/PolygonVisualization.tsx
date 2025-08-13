@@ -4,6 +4,7 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { MapPin } from "lucide-react";
+import { createMapboxMap, isContainerReady, validateMapboxToken } from "@/lib/mapbox";
 
 interface PolygonVisualizationProps {
   polygon: {
@@ -31,8 +32,17 @@ export const PolygonVisualization: React.FC<PolygonVisualizationProps> = ({
     }
 
     try {
-      // Initialize map
-      mapboxgl.accessToken = mapboxToken;
+      // Validate token and container
+      if (!validateMapboxToken(mapboxToken)) {
+        console.error('Invalid Mapbox token for visualization');
+        return;
+      }
+
+      const container = mapContainer.current;
+      if (!isContainerReady(container)) {
+        console.warn('Container not ready for polygon visualization');
+        return;
+      }
       
       // Calculate bounds from polygon coordinates
       let minLng = polygon.coordinates[0][0];
@@ -52,17 +62,8 @@ export const PolygonVisualization: React.FC<PolygonVisualizationProps> = ({
         (minLat + maxLat) / 2
       ];
 
-      map.current = new mapboxgl.Map({
-        container: mapContainer.current,
-        style: "mapbox://styles/mapbox/satellite-v9",
-        center,
-        zoom: 14,
-        dragPan: true,
-        scrollZoom: true,
-        doubleClickZoom: true,
-        touchZoomRotate: true,
-        preserveDrawingBuffer: true
-      });
+      // Create map using standardized function
+      map.current = createMapboxMap(container, mapboxToken, center, 14);
 
       map.current.addControl(new mapboxgl.NavigationControl(), "top-right");
 
@@ -128,14 +129,45 @@ export const PolygonVisualization: React.FC<PolygonVisualizationProps> = ({
     }
 
     return () => {
+      // Proper cleanup following Mapbox best practices
       try {
         if (map.current) {
-          // Remove event listeners
-          map.current.off('load', undefined);
+          // Remove all event listeners
+          const eventsToRemove = ['load', 'error', 'sourcedata', 'styledata'];
+          eventsToRemove.forEach(event => {
+            try {
+              map.current?.off(event as any, undefined as any);
+            } catch (e) {
+              console.warn(`Failed to remove ${event} listener:`, e);
+            }
+          });
           
-          // Remove map
-          map.current.remove();
-          map.current = null;
+          // Remove navigation control if it exists
+          try {
+            const controls = map.current.getContainer().querySelectorAll('.mapboxgl-control-container');
+            controls.forEach(control => {
+              try {
+                control.remove();
+              } catch (e) {
+                console.warn('Error removing control:', e);
+              }
+            });
+          } catch (e) {
+            console.warn('Error removing controls:', e);
+          }
+          
+          // Remove map with timeout to prevent race conditions
+          setTimeout(() => {
+            try {
+              if (map.current && map.current.getContainer()) {
+                map.current.remove();
+              }
+            } catch (e) {
+              console.warn('Error removing visualization map:', e);
+            } finally {
+              map.current = null;
+            }
+          }, 50);
         }
       } catch (error) {
         console.warn('Error during polygon visualization cleanup:', error);
