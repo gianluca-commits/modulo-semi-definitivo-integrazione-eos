@@ -5,6 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EosSummary, computeProductivity, getEosSummary, demoVegetation, type PolygonData, type EosConfig, getOptimalEosParameters } from "@/lib/eos";
 import { EosParameterDisplay } from "@/components/EosParameterDisplay";
+import { HealthStatusCard } from "@/components/HealthStatusCard";
+import { WaterStressAlert } from "@/components/WaterStressAlert";
+import { AdvancedNDVIChart } from "@/components/AdvancedNDVIChart";
+import { analyzeTemporalTrends } from "@/lib/eosAnalysis";
 import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { BarChart3, ArrowLeft, ThermometerSun, Droplets, Leaf, Activity, Download, AlertCircle } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -165,11 +169,23 @@ const EOSOutput: React.FC = () => {
   }, [polygon, eosConfig, refreshKey, savedBundle, userCfg]);
   const productivity = useMemo(() => computeProductivity(userCfg?.cropType || "sunflower"), [userCfg?.cropType]);
   const demoTs = useMemo(() => demoVegetation().time_series, []);
+  
   if (!polygon || !userCfg) return null;
   const rawTs = summary?.ndvi_series as any || [];
   const noRealObs = !rawTs.length || summary?.meta?.observation_count === 0;
   const isDemo = showDemo || noRealObs;
   const ts = isDemo && showDemo ? demoTs : rawTs;
+  
+  // Enhanced analysis for the new components
+  const ndviAnalysis = useMemo(() => {
+    if (!ts.length) return null;
+    return analyzeTemporalTrends(ts, "NDVI", userCfg?.cropType || "sunflower");
+  }, [ts, userCfg?.cropType]);
+  
+  const ndmiAnalysis = useMemo(() => {
+    if (!ts.length) return null;
+    return analyzeTemporalTrends(ts, "NDMI", userCfg?.cropType || "sunflower");
+  }, [ts, userCfg?.cropType]);
   const fileSafe = (s: string) => (s || "").replace(/[^a-z0-9-_]+/gi, "_").toLowerCase();
   const handleExportJSON = () => {
     if (!summary) {
@@ -337,37 +353,31 @@ const EOSOutput: React.FC = () => {
         </aside>
 
         <article className="lg:col-span-2 space-y-6">
-          {/* KPI cards */}
+          {/* Enhanced KPI cards */}
           <div className="grid md:grid-cols-2 gap-4">
-            <Card className="border border-border">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-foreground"><Leaf className="w-4 h-4" /> NDVI {isDemo && <Badge variant="secondary" className="ml-2">Dati di esempio</Badge>}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold text-foreground">{summary?.ndvi_data.current_value != null ? summary.ndvi_data.current_value.toLocaleString('it-IT', {
-                    maximumFractionDigits: 2
-                  }) : "-"}</p>
-                <p className="text-sm text-muted-foreground">Trend 30gg: {summary?.ndvi_data.trend_30_days != null ? `${summary.ndvi_data.trend_30_days.toLocaleString('it-IT', {
-                    maximumFractionDigits: 1
-                  })}%` : "-"}</p>
-              </CardContent>
-            </Card>
-            <Card className="border border-border">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-foreground"><Droplets className="w-4 h-4" /> NDMI / Stress idrico</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold text-foreground">{summary?.ndmi_data.current_value != null ? summary.ndmi_data.current_value.toLocaleString('it-IT', {
-                    maximumFractionDigits: 2
-                  }) : "-"}</p>
-                <p className="text-sm text-muted-foreground">Livello: {summary?.ndmi_data.water_stress_level ? ({
-                    none: "Nessuno",
-                    mild: "Lieve",
-                    moderate: "Moderato",
-                    severe: "Severo"
-                  } as any)[summary.ndmi_data.water_stress_level] : "-"}</p>
-              </CardContent>
-            </Card>
+            {summary?.ndvi_data.current_value != null && (
+              <HealthStatusCard
+                ndvi={summary.ndvi_data.current_value}
+                trend={summary.ndvi_data.trend_30_days}
+                cropType={userCfg?.cropType || "sunflower"}
+                temporalAnalysis={ndviAnalysis}
+                isDemo={isDemo}
+              />
+            )}
+            
+            {summary?.ndmi_data.current_value != null && summary && (
+              <WaterStressAlert
+                ndmi={summary.ndmi_data.current_value}
+                trend={summary.ndmi_data.trend_14_days}
+                cropType={userCfg?.cropType || "sunflower"}
+                summary={summary}
+                temporalAnalysis={ndmiAnalysis}
+                onIrrigationPlan={() => {
+                  // TODO: Implement irrigation planning modal
+                  console.log("Planning irrigation...");
+                }}
+              />
+            )}
             <Card className="border border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-foreground"><Activity className="w-4 h-4" /> Fenologia</CardTitle>
@@ -407,39 +417,25 @@ const EOSOutput: React.FC = () => {
             </Card>
           </div>
 
-          {/* Chart */}
-          <Card className="border border-border">
-            <CardHeader>
-              <CardTitle className="text-foreground">Andamento NDVI {isDemo && <Badge variant="secondary" className="ml-2">Dati di esempio</Badge>}</CardTitle>
-            </CardHeader>
-            <CardContent className="h-64">
-              {ts.length ? <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={ts} margin={{
-                  left: 12,
-                  right: 12,
-                  top: 10,
-                  bottom: 10
-                }}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" tick={{
-                    fill: "hsl(var(--muted-foreground))"
-                  }} />
-                    <YAxis domain={[0, 1]} tick={{
-                    fill: "hsl(var(--muted-foreground))"
-                  }} />
-                    <ReTooltip contentStyle={{
-                    background: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    color: "hsl(var(--foreground))"
-                  }} />
-                    <Line type="monotone" dataKey="NDVI" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer> : <div className="text-sm text-muted-foreground space-y-2">
-                  <p>Nessun dato NDVI disponibile nel periodo selezionato.</p>
-                  <Button size="sm" variant="secondary" onClick={() => setShowDemo(true)}>Mostra dati di esempio</Button>
-                </div>}
-            </CardContent>
-          </Card>
+          {/* Enhanced NDVI Chart */}
+          {ts?.length > 0 && (
+            <AdvancedNDVIChart
+              timeSeries={ts}
+              cropType={userCfg?.cropType || "sunflower"}
+              isDemo={isDemo}
+            />
+          )}
+          
+          {!ts?.length && (
+            <Card>
+              <CardContent className="h-32 flex flex-col items-center justify-center text-muted-foreground space-y-2">
+                <p>Nessun dato disponibile per il grafico</p>
+                <Button size="sm" variant="secondary" onClick={() => setShowDemo(true)}>
+                  Mostra dati di esempio
+                </Button>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Productivity */}
           
