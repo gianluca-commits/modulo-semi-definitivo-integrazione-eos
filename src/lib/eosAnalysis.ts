@@ -13,24 +13,33 @@ export interface CropThresholds {
     stress_threshold: number;
     critical_threshold: number;
   };
+  reci: {
+    high_nitrogen: number;    // >this value = sufficient nitrogen
+    medium_nitrogen: number;  // moderate nitrogen levels
+    low_nitrogen: number;     // <this value = nitrogen deficiency
+  };
 }
 
 export const CROP_THRESHOLDS: Record<string, CropThresholds> = {
   wheat: {
     ndvi: { excellent: 0.8, good: 0.65, moderate: 0.45, critical: 0.3 },
-    ndmi: { optimal: 0.4, stress_threshold: 0.25, critical_threshold: 0.15 }
+    ndmi: { optimal: 0.4, stress_threshold: 0.25, critical_threshold: 0.15 },
+    reci: { high_nitrogen: 1.8, medium_nitrogen: 1.2, low_nitrogen: 0.8 }
   },
   wine: {
     ndvi: { excellent: 0.75, good: 0.6, moderate: 0.4, critical: 0.25 },
-    ndmi: { optimal: 0.35, stress_threshold: 0.2, critical_threshold: 0.1 }
+    ndmi: { optimal: 0.35, stress_threshold: 0.2, critical_threshold: 0.1 },
+    reci: { high_nitrogen: 1.6, medium_nitrogen: 1.0, low_nitrogen: 0.6 }
   },
   olive: {
     ndvi: { excellent: 0.7, good: 0.55, moderate: 0.35, critical: 0.2 },
-    ndmi: { optimal: 0.3, stress_threshold: 0.18, critical_threshold: 0.08 }
+    ndmi: { optimal: 0.3, stress_threshold: 0.18, critical_threshold: 0.08 },
+    reci: { high_nitrogen: 1.5, medium_nitrogen: 0.9, low_nitrogen: 0.5 }
   },
   sunflower: {
     ndvi: { excellent: 0.85, good: 0.7, moderate: 0.5, critical: 0.35 },
-    ndmi: { optimal: 0.45, stress_threshold: 0.3, critical_threshold: 0.2 }
+    ndmi: { optimal: 0.45, stress_threshold: 0.3, critical_threshold: 0.2 },
+    reci: { high_nitrogen: 2.0, medium_nitrogen: 1.4, low_nitrogen: 1.0 }
   }
 };
 

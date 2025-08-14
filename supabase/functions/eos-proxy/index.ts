@@ -18,6 +18,7 @@ interface VegetationPoint {
   date: string;
   NDVI: number;
   NDMI: number;
+  ReCI?: number; // Red-edge Chlorophyll Index
 }
 
 interface VegetationData {

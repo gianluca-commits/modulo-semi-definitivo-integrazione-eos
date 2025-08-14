@@ -9,7 +9,10 @@ import { HealthStatusCard } from "@/components/HealthStatusCard";
 import { WaterStressAlert } from "@/components/WaterStressAlert";
 import { AdvancedNDVIChart } from "@/components/AdvancedNDVIChart";
 import { YieldPredictionCard } from "@/components/YieldPredictionCard";
+import { NitrogenAnalysisCard } from "@/components/NitrogenAnalysisCard";
+import { IntelligentAlertsCard } from "@/components/IntelligentAlertsCard";
 import { analyzeTemporalTrends } from "@/lib/eosAnalysis";
+import { generateIntelligentAlerts, AlertsBundle } from "@/lib/intelligentAlerts";
 import { calculateYieldPrediction } from "@/lib/yieldPrediction";
 import { getYieldPrediction, YieldPredictionResponse } from "@/lib/eos";
 import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from "recharts";
@@ -47,6 +50,7 @@ const EOSOutput: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [isLoadingYield, setIsLoadingYield] = useState(false);
   const [usingSaved, setUsingSaved] = useState(false);
+  const [alertsBundle, setAlertsBundle] = useState<AlertsBundle | null>(null);
   const [savedBundle, setSavedBundle] = useState<{
     polygon: PolygonData;
     userCfg: any;
@@ -147,6 +151,15 @@ const EOSOutput: React.FC = () => {
         } finally {
           setIsLoadingYield(false);
         }
+
+        // Generate intelligent alerts
+        const alerts = generateIntelligentAlerts(
+          sumRes, 
+          sumRes.ndvi_series || [], 
+          eosConfig.cropType,
+          250
+        );
+        setAlertsBundle(alerts);
         // Persist last successful result for offline/fallback exports (only real observations, no fallback)
         try {
           const obsCount = sumRes?.meta?.observation_count ?? 0;
@@ -372,6 +385,11 @@ const EOSOutput: React.FC = () => {
         </aside>
 
         <article className="lg:col-span-2 space-y-6">
+          {/* Intelligent Alerts */}
+          {alertsBundle && (
+            <IntelligentAlertsCard alertsBundle={alertsBundle} />
+          )}
+
           {/* Enhanced KPI cards with Yield Prediction */}
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
             {summary?.ndvi_data.current_value != null && (
@@ -469,6 +487,17 @@ const EOSOutput: React.FC = () => {
               </CardContent>
             </Card>
           </div>
+
+          {/* Nitrogen Analysis */}
+          {ts?.length > 0 && ts[ts.length - 1]?.ReCI && (
+            <NitrogenAnalysisCard
+              reci={ts[ts.length - 1].ReCI}
+              previousReci={ts[ts.length - 2]?.ReCI}
+              cropType={userCfg?.cropType || "sunflower"}
+              expectedYield={yieldPrediction?.predicted_yield_ton_ha || 5}
+              marketPrice={250}
+            />
+          )}
 
           {/* Enhanced NDVI Chart */}
           {ts?.length > 0 && (

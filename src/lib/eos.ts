@@ -82,6 +82,7 @@ export interface VegetationPoint {
   date: string;
   NDVI: number;
   NDMI: number;
+  ReCI?: number; // Red-edge Chlorophyll Index for nitrogen analysis
 }
 
 export interface VegetationData {
