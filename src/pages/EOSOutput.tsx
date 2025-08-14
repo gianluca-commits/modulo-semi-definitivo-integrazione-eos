@@ -1,3 +1,4 @@
+
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/components/ui/use-toast";
@@ -24,6 +25,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import GoogleMapsVisualization from "@/components/GoogleMapsVisualization";
 import { supabase } from "@/integrations/supabase/client";
+
 function setMetaTags(title: string, description: string, canonicalPath: string) {
   document.title = title;
   let meta = document.querySelector('meta[name="description"]');
@@ -42,6 +44,7 @@ function setMetaTags(title: string, description: string, canonicalPath: string) 
   const origin = window.location.origin;
   link.href = `${origin}${canonicalPath}`;
 }
+
 const EOSOutput: React.FC = () => {
   const navigate = useNavigate();
   const [polygon, setPolygon] = useState<PolygonData | null>(null);
@@ -62,13 +65,15 @@ const EOSOutput: React.FC = () => {
   const [usePermissiveFilters, setUsePermissiveFilters] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [showDemo, setShowDemo] = useState(false);
-  // Get optimal profile for UI display
+
+  // Get optimal profile for UI display - Always call this hook
   const optimalProfile = useMemo(() => {
     if (!polygon) return null;
     const profile = getOptimalEosParameters(polygon);
     return profile;
   }, [polygon]);
 
+  // Always call this hook
   const eosConfig: EosConfig | null = useMemo(() => {
     if (!userCfg) return null;
     const cfg: EosConfig = {
@@ -88,6 +93,36 @@ const EOSOutput: React.FC = () => {
     };
     return cfg;
   }, [userCfg, usePermissiveFilters]);
+
+  // Always call this hook
+  const productivity = useMemo(() => computeProductivity(userCfg?.cropType || "sunflower"), [userCfg?.cropType]);
+  
+  // Always call this hook
+  const demoTs = useMemo(() => demoVegetation().time_series, []);
+
+  // Always call this hook
+  const rawTs = useMemo(() => summary?.ndvi_series as any || [], [summary?.ndvi_series]);
+  
+  // Always call this hook
+  const noRealObs = useMemo(() => !rawTs.length || summary?.meta?.observation_count === 0, [rawTs.length, summary?.meta?.observation_count]);
+  
+  // Always call this hook
+  const isDemo = useMemo(() => showDemo || noRealObs, [showDemo, noRealObs]);
+  
+  // Always call this hook
+  const ts = useMemo(() => isDemo && showDemo ? demoTs : rawTs, [isDemo, showDemo, demoTs, rawTs]);
+  
+  // Enhanced analysis for the new components - Always call these hooks
+  const ndviAnalysis = useMemo(() => {
+    if (!ts.length) return null;
+    return analyzeTemporalTrends(ts, "NDVI", userCfg?.cropType || "sunflower");
+  }, [ts, userCfg?.cropType]);
+  
+  const ndmiAnalysis = useMemo(() => {
+    if (!ts.length) return null;
+    return analyzeTemporalTrends(ts, "NDMI", userCfg?.cropType || "sunflower");
+  }, [ts, userCfg?.cropType]);
+
   useEffect(() => {
     setMetaTags("Risultati analisi | EOS Agritech", "KPI NDVI/NDMI, fenologia e rischi meteo per il tuo campo.", "/output");
     try {
@@ -130,6 +165,7 @@ const EOSOutput: React.FC = () => {
       navigate("/");
     }
   }, [navigate]);
+
   useEffect(() => {
     const run = async () => {
       if (!polygon || !eosConfig) return;
@@ -201,26 +237,9 @@ const EOSOutput: React.FC = () => {
     };
     run();
   }, [polygon, eosConfig, refreshKey, savedBundle, userCfg]);
-  const productivity = useMemo(() => computeProductivity(userCfg?.cropType || "sunflower"), [userCfg?.cropType]);
-  const demoTs = useMemo(() => demoVegetation().time_series, []);
-  
-  if (!polygon || !userCfg) return null;
-  const rawTs = summary?.ndvi_series as any || [];
-  const noRealObs = !rawTs.length || summary?.meta?.observation_count === 0;
-  const isDemo = showDemo || noRealObs;
-  const ts = isDemo && showDemo ? demoTs : rawTs;
-  
-  // Enhanced analysis for the new components
-  const ndviAnalysis = useMemo(() => {
-    if (!ts.length) return null;
-    return analyzeTemporalTrends(ts, "NDVI", userCfg?.cropType || "sunflower");
-  }, [ts, userCfg?.cropType]);
-  
-  const ndmiAnalysis = useMemo(() => {
-    if (!ts.length) return null;
-    return analyzeTemporalTrends(ts, "NDMI", userCfg?.cropType || "sunflower");
-  }, [ts, userCfg?.cropType]);
+
   const fileSafe = (s: string) => (s || "").replace(/[^a-z0-9-_]+/gi, "_").toLowerCase();
+  
   const handleExportJSON = () => {
     if (!summary) {
       toast({
@@ -245,6 +264,7 @@ const EOSOutput: React.FC = () => {
     a.click();
     URL.revokeObjectURL(a.href);
   };
+  
   const handleExportCSV = () => {
     if (!ts.length || isDemo) {
       toast({
@@ -265,9 +285,13 @@ const EOSOutput: React.FC = () => {
     a.click();
     URL.revokeObjectURL(a.href);
   };
+  
   const handlePrint = () => {
     window.print();
   };
+
+  if (!polygon || !userCfg) return null;
+
   return <main className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
         <div className="max-w-6xl mx-auto px-4 py-6 flex items-center justify-between">
@@ -556,4 +580,5 @@ const EOSOutput: React.FC = () => {
       {loading && <div className="max-w-6xl mx-auto px-4 pb-8 text-sm text-muted-foreground">Caricamento in corso…</div>}
     </main>;
 };
+
 export default EOSOutput;
