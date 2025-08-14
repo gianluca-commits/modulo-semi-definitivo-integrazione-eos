@@ -8,7 +8,10 @@ import { EosParameterDisplay } from "@/components/EosParameterDisplay";
 import { HealthStatusCard } from "@/components/HealthStatusCard";
 import { WaterStressAlert } from "@/components/WaterStressAlert";
 import { AdvancedNDVIChart } from "@/components/AdvancedNDVIChart";
+import { YieldPredictionCard } from "@/components/YieldPredictionCard";
 import { analyzeTemporalTrends } from "@/lib/eosAnalysis";
+import { calculateYieldPrediction } from "@/lib/yieldPrediction";
+import { getYieldPrediction, YieldPredictionResponse } from "@/lib/eos";
 import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { BarChart3, ArrowLeft, ThermometerSun, Droplets, Leaf, Activity, Download, AlertCircle } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -40,7 +43,9 @@ const EOSOutput: React.FC = () => {
   const [userCfg, setUserCfg] = useState<any>(null);
   const [mapboxToken, setMapboxToken] = useState<string>("");
   const [summary, setSummary] = useState<EosSummary | null>(null);
+  const [yieldPrediction, setYieldPrediction] = useState<YieldPredictionResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isLoadingYield, setIsLoadingYield] = useState(false);
   const [usingSaved, setUsingSaved] = useState(false);
   const [savedBundle, setSavedBundle] = useState<{
     polygon: PolygonData;
@@ -128,6 +133,20 @@ const EOSOutput: React.FC = () => {
         setSummary(sumRes);
         setUsingSaved(false);
         setShowDemo(false);
+
+        // Fetch yield prediction
+        setIsLoadingYield(true);
+        try {
+          console.log("Fetching yield prediction...");
+          const yieldData = await getYieldPrediction(polygon, eosConfig);
+          console.log("Yield prediction received:", yieldData);
+          setYieldPrediction(yieldData);
+        } catch (yieldErr) {
+          console.error("Error fetching yield prediction:", yieldErr);
+          // Don't set error for yield prediction, just log it
+        } finally {
+          setIsLoadingYield(false);
+        }
         // Persist last successful result for offline/fallback exports (only real observations, no fallback)
         try {
           const obsCount = sumRes?.meta?.observation_count ?? 0;
@@ -353,8 +372,8 @@ const EOSOutput: React.FC = () => {
         </aside>
 
         <article className="lg:col-span-2 space-y-6">
-          {/* Enhanced KPI cards */}
-          <div className="grid md:grid-cols-2 gap-4">
+          {/* Enhanced KPI cards with Yield Prediction */}
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
             {summary?.ndvi_data.current_value != null && (
               <HealthStatusCard
                 ndvi={summary.ndvi_data.current_value}
@@ -377,6 +396,40 @@ const EOSOutput: React.FC = () => {
                   console.log("Planning irrigation...");
                 }}
               />
+            )}
+
+            {/* Yield Prediction Card */}
+            {isLoadingYield ? (
+              <Card className="w-full">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-center h-32">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : yieldPrediction ? (
+              <YieldPredictionCard 
+                prediction={calculateYieldPrediction(summary || {
+                  ndvi_data: { current_value: 0.6 },
+                  ndmi_data: { current_value: 0.4 },
+                  weather_risks: {
+                    temperature_stress_days: 0,
+                    precipitation_deficit_mm: 0,
+                    frost_risk_forecast_7d: false,
+                    heat_stress_risk: "low"
+                  }
+                } as any, userCfg?.cropType || "sunflower", summary?.ndvi_series || [])}
+                cropType={userCfg?.cropType || "sunflower"}
+              />
+            ) : (
+              <Card className="w-full">
+                <CardContent className="p-6">
+                  <div className="text-center text-muted-foreground">
+                    <p>Predizione resa non disponibile</p>
+                    <p className="text-sm mt-2">Riprova più tardi</p>
+                  </div>
+                </CardContent>
+              </Card>
             )}
             <Card className="border border-border">
               <CardHeader>

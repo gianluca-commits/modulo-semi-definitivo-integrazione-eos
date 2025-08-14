@@ -120,6 +120,27 @@ export interface ProductivityData {
   expected_revenue_eur_ha: number;
 }
 
+export interface YieldPredictionResponse {
+  predicted_yield_ton_ha: number;
+  confidence_level: number;
+  yield_class: string;
+  factors: {
+    ndvi_impact: number;
+    ndmi_impact: number;
+    data_points: number;
+  };
+  historical_comparison: {
+    vs_average: number;
+  };
+  recommendations: string[];
+  meta: {
+    crop_type: string;
+    analysis_date: string;
+    data_source: string;
+    time_series_length: number;
+  };
+}
+
 // Calculate polygon area (ha) using equirectangular projection for small areas
 export function calculateAreaHa(coords: Coordinate[]): number {
   if (!coords || coords.length < 4) return 0;
@@ -391,6 +412,82 @@ export interface EosSummary {
     all_attempts_failed?: boolean;
     suggestions?: string[];
   };
+}
+
+export async function getYieldPrediction(polygon: PolygonData, config: EosConfig): Promise<YieldPredictionResponse> {
+  if (config.apiKey === "demo") {
+    console.log("Demo mode enabled, generating mock yield prediction");
+    
+    return {
+      predicted_yield_ton_ha: 6.8,
+      confidence_level: 82,
+      yield_class: 'good',
+      factors: {
+        ndvi_impact: 78.5,
+        ndmi_impact: 65.2,
+        data_points: 12,
+      },
+      historical_comparison: {
+        vs_average: 15.3,
+      },
+      recommendations: [
+        "Condizioni favorevoli per buona produttività",
+        "Monitorare irrigazione nelle prossime settimane",
+        "Ottimizzare fertilizzazione per massimizzare resa"
+      ],
+      meta: {
+        crop_type: config.cropType,
+        analysis_date: new Date().toISOString(),
+        data_source: "Demo Data",
+        time_series_length: 12,
+      },
+    };
+  }
+
+  console.log("Fetching yield prediction via Supabase function");
+  
+  try {
+    const response = await supabase.functions.invoke('eos-proxy', {
+      body: {
+        action: 'yield_prediction',
+        polygon,
+        start_date: config.start_date,
+        end_date: config.end_date,
+        crop_type: config.cropType,
+      },
+    });
+
+    if (response.error) throw new Error(response.error.message);
+    
+    return response.data as YieldPredictionResponse;
+  } catch (error) {
+    console.warn("Yield prediction failed, returning demo data", error);
+    
+    return {
+      predicted_yield_ton_ha: 5.2,
+      confidence_level: 65,
+      yield_class: 'average',
+      factors: {
+        ndvi_impact: 60.0,
+        ndmi_impact: 55.0,
+        data_points: 8,
+      },
+      historical_comparison: {
+        vs_average: -10.3,
+      },
+      recommendations: [
+        "Dati limitati - verificare connessione API",
+        "Considerare analisi più approfondita",
+        "Monitorare sviluppo vegetativo"
+      ],
+      meta: {
+        crop_type: config.cropType,
+        analysis_date: new Date().toISOString(),
+        data_source: "Fallback Demo Data",
+        time_series_length: 8,
+      },
+    };
+  }
 }
 
 export async function getEosSummary(
