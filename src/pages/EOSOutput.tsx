@@ -12,6 +12,7 @@ import { YieldPredictionCard } from "@/components/YieldPredictionCard";
 import { NitrogenAnalysisCard } from "@/components/NitrogenAnalysisCard";
 import { IntelligentAlertsCard } from "@/components/IntelligentAlertsCard";
 import { WeatherAnalyticsCard } from "@/components/WeatherAnalyticsCard";
+import { SoilMoistureAnalyticsCard } from "@/components/SoilMoistureAnalyticsCard";
 import { analyzeTemporalTrends } from "@/lib/eosAnalysis";
 import { generateIntelligentAlerts, AlertsBundle } from "@/lib/intelligentAlerts";
 import { calculateYieldPrediction } from "@/lib/yieldPrediction";
@@ -488,6 +489,21 @@ const EOSOutput: React.FC = () => {
               </CardContent>
             </Card>
           </div>
+
+          {/* Soil Moisture Analytics */}
+          {summary?.soil_moisture && (
+            <div className="space-y-4">
+              <h2 className="text-2xl font-semibold text-primary">Analisi Umidità Suolo</h2>
+              <SoilMoistureAnalyticsCard 
+                soilMoisture={summary.soil_moisture}
+                cropType={userCfg?.cropType || "sunflower"}
+                onIrrigationPlan={() => {
+                  // TODO: Implement irrigation planning modal
+                  console.log("Planning irrigation from soil moisture...");
+                }}
+              />
+            </div>
+          )}
 
           {/* Nitrogen Analysis */}
           {ts?.length > 0 && ts[ts.length - 1]?.ReCI && (

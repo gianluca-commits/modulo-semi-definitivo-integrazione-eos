@@ -154,6 +154,35 @@ export interface ProductivityData {
   expected_revenue_eur_ha: number;
 }
 
+// Soil Moisture Analytics Interface
+export interface SoilMoistureData {
+  surface_moisture: number; // 0-7cm (%)
+  root_zone_moisture: number; // up to 70cm (%)
+  soil_moisture_index: number; // SMI standardized (-3 to +3)
+  evapotranspiration_actual: number; // mm/day
+  evapotranspiration_potential: number; // mm/day
+  water_deficit: number; // ET_potential - ET_actual (mm/day)
+  drought_stress_level: "none" | "mild" | "moderate" | "severe";
+  historical_percentile: number; // vs 20-year average (0-100)
+  forecast_7d: SoilMoistureForecast[];
+  field_capacity: number; // %
+  wilting_point: number; // %
+  available_water_content: number; // %
+  irrigation_recommendation?: {
+    timing: "immediate" | "within_3_days" | "within_week" | "not_needed";
+    volume_mm: number;
+    priority: "critical" | "high" | "medium" | "low";
+  };
+}
+
+export interface SoilMoistureForecast {
+  date: string;
+  surface_moisture: number;
+  root_zone_moisture: number;
+  stress_probability: number; // 0-100
+  irrigation_need: boolean;
+}
+
 export interface YieldPredictionResponse {
   predicted_yield_ton_ha: number;
   confidence_level: number;
@@ -161,6 +190,8 @@ export interface YieldPredictionResponse {
   factors: {
     ndvi_impact: number;
     ndmi_impact: number;
+    soil_moisture_impact?: number;
+    weather_impact: number;
     data_points: number;
   };
   historical_comparison: {
@@ -426,6 +457,7 @@ export interface EosSummary {
     trend_14_days?: number;
     critical_threshold: number;
   };
+  soil_moisture?: SoilMoistureData;
   phenology: {
     current_stage?:
       | "germination"
@@ -445,6 +477,7 @@ export interface EosSummary {
     precipitation_deficit_mm?: number;
     frost_risk_forecast_7d?: boolean;
     heat_stress_risk?: "low" | "medium" | "high";
+    water_deficit_cumulative?: number; // mm over analysis period
   };
   weather?: WeatherData;
   // Optional NDVI/NDMI time series for charting without extra calls
@@ -481,6 +514,7 @@ export async function getYieldPrediction(polygon: PolygonData, config: EosConfig
       factors: {
         ndvi_impact: 78.5,
         ndmi_impact: 65.2,
+        weather_impact: 80.0,
         data_points: 12,
       },
       historical_comparison: {
@@ -526,6 +560,7 @@ export async function getYieldPrediction(polygon: PolygonData, config: EosConfig
       factors: {
         ndvi_impact: 60.0,
         ndmi_impact: 55.0,
+        weather_impact: 70.0,
         data_points: 8,
       },
       historical_comparison: {
