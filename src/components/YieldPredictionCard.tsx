@@ -76,11 +76,11 @@ export function YieldPredictionCard({ prediction, cropType }: YieldPredictionCar
           <div className="space-y-2">
             <div className="flex justify-between items-center">
               <span className="text-sm">NDVI (Vigoria)</span>
-              <span className="text-sm font-medium">{prediction.factors.ndvi_contribution}%</span>
+              <span className="text-sm font-medium">{prediction.factors.ndvi_impact}%</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm">NDMI (Stress Idrico)</span>
-              <span className="text-sm font-medium">{prediction.factors.ndmi_contribution}%</span>
+              <span className="text-sm font-medium">{prediction.factors.ndmi_impact}%</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm">Impatto Meteo</span>
@@ -99,13 +99,13 @@ export function YieldPredictionCard({ prediction, cropType }: YieldPredictionCar
           <div className="flex justify-between items-center">
             <span className="text-sm">vs Media Campo</span>
             <span className={`text-sm font-medium flex items-center gap-1 ${
-              prediction.historical_comparison.vs_field_average >= 0 ? 'text-green-600' : 'text-red-600'
+              prediction.historical_comparison.vs_average >= 0 ? 'text-green-600' : 'text-red-600'
             }`}>
-              {prediction.historical_comparison.vs_field_average >= 0 ? 
+              {prediction.historical_comparison.vs_average >= 0 ? 
                 <TrendingUp className="h-3 w-3" /> : 
                 <TrendingDown className="h-3 w-3" />
               }
-              {Math.abs(prediction.historical_comparison.vs_field_average)}%
+              {Math.abs(prediction.historical_comparison.vs_average)}%
             </span>
           </div>
         </div>

@@ -6,15 +6,15 @@ export interface YieldPrediction {
   confidence_level: number; // 0-100%
   yield_class: 'excellent' | 'good' | 'average' | 'below_average' | 'poor';
   factors: {
-    ndvi_contribution: number; // percentage
-    ndmi_contribution: number; // percentage
+    ndvi_impact: number; // percentage
+    ndmi_impact: number; // percentage
     weather_impact: number; // percentage
     seasonal_adjustment: number; // percentage
-    soil_moisture_contribution?: number; // percentage
+    soil_moisture_impact?: number; // percentage
+    data_points: number;
   };
   historical_comparison: {
-    vs_field_average: number; // percentage difference
-    vs_regional_average: number; // percentage difference
+    vs_average: number; // percentage difference
   };
   economic_projection: {
     expected_revenue_eur_ha: number;
@@ -23,6 +23,12 @@ export interface YieldPrediction {
     net_profit_eur_ha: number;
   };
   recommendations: string[];
+  meta: {
+    crop_type: string;
+    analysis_date: string;
+    data_source: string;
+    time_series_length: number;
+  };
 }
 
 // Historical yield database by crop type (ton/ha)
@@ -253,15 +259,15 @@ export function calculateYieldPrediction(
     confidence_level: confidence,
     yield_class: yieldClass,
     factors: {
-      ndvi_contribution: Number((ndviMultiplier * 25).toFixed(1)),
-      ndmi_contribution: Number((ndmiMultiplier * 15).toFixed(1)),
+      ndvi_impact: Number((ndviMultiplier * 25).toFixed(1)),
+      ndmi_impact: Number((ndmiMultiplier * 15).toFixed(1)),
       weather_impact: Number((weatherMultiplier * 25).toFixed(1)),
       seasonal_adjustment: Number((seasonalMultiplier * 5).toFixed(1)),
-      soil_moisture_contribution: eosData.soil_moisture ? Number((soilMoistureMultiplier * 30).toFixed(1)) : undefined
+      soil_moisture_impact: eosData.soil_moisture ? Number((soilMoistureMultiplier * 30).toFixed(1)) : undefined,
+      data_points: timeSeries.length
     },
     historical_comparison: {
-      vs_field_average: Number(((predictedYield / historicalYield.average - 1) * 100).toFixed(1)),
-      vs_regional_average: Number(((predictedYield / historicalYield.average - 1) * 100).toFixed(1)) // Simplified
+      vs_average: Number(((predictedYield / historicalYield.average - 1) * 100).toFixed(1))
     },
     economic_projection: {
       expected_revenue_eur_ha: Number(expectedRevenue.toFixed(0)),
@@ -269,6 +275,12 @@ export function calculateYieldPrediction(
       production_cost_eur_ha: productionCost,
       net_profit_eur_ha: Number(netProfit.toFixed(0))
     },
-    recommendations
+    recommendations,
+    meta: {
+      crop_type: cropType,
+      analysis_date: new Date().toISOString(),
+      data_source: "Internal Algorithm with EOS Data",
+      time_series_length: timeSeries.length
+    }
   };
 }

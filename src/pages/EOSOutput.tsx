@@ -17,7 +17,7 @@ import { SoilMoistureAnalyticsCard } from "@/components/SoilMoistureAnalyticsCar
 import { analyzeTemporalTrends } from "@/lib/eosAnalysis";
 import { generateIntelligentAlerts, AlertsBundle } from "@/lib/intelligentAlerts";
 import { calculateYieldPrediction } from "@/lib/yieldPrediction";
-import { getYieldPrediction, YieldPredictionResponse } from "@/lib/eos";
+import type { YieldPredictionResponse } from "@/lib/eos";
 import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { BarChart3, ArrowLeft, ThermometerSun, Droplets, Leaf, Activity, Download, AlertCircle } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -176,15 +176,15 @@ const EOSOutput: React.FC = () => {
         setUsingSaved(false);
         setShowDemo(false);
 
-        // Fetch yield prediction
+        // Generate yield prediction using internal algorithm with real EOS data
         setIsLoadingYield(true);
         try {
-          console.log("Fetching yield prediction...");
-          const yieldData = await getYieldPrediction(polygon, eosConfig);
-          console.log("Yield prediction received:", yieldData);
+          console.log("Calculating yield prediction from EOS data...");
+          const yieldData = calculateYieldPrediction(sumRes, eosConfig.cropType, ts);
+          console.log("Yield prediction calculated:", yieldData);
           setYieldPrediction(yieldData);
         } catch (yieldErr) {
-          console.error("Error fetching yield prediction:", yieldErr);
+          console.error("Error calculating yield prediction:", yieldErr);
           // Don't set error for yield prediction, just log it
         } finally {
           setIsLoadingYield(false);
