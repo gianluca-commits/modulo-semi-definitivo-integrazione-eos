@@ -30,8 +30,26 @@ interface VegetationData {
 
 interface WeatherData {
   temperature_avg: number;
+  temperature_min: number;
+  temperature_max: number;
   precipitation_total: number;
+  humidity_avg: number;
+  humidity_min: number;
+  humidity_max: number;
+  wind_speed_avg: number;
+  wind_speed_max: number;
+  solar_radiation: number;
+  sunshine_hours: number;
+  cloudiness: number;
+  pressure: number;
+  growing_degree_days: number;
+  heat_stress_index: number;
+  cold_stress_index: number;
+  water_balance: number;
+  evapotranspiration: number;
   alerts: string[];
+  forecast?: any[];
+  historical_comparison?: any;
 }
 
 serve(async (req) => {
@@ -316,26 +334,155 @@ serve(async (req) => {
       const json = await resp.json();
       const days = Array.isArray(json) ? json : [];
 
-      let tempSum = 0;
+      // Enhanced weather data calculation
+      let tempSum = 0, tempMin = 999, tempMax = -999;
       let tempCount = 0;
       let precipTotal = 0;
+      let humiditySum = 0, humidityMin = 999, humidityMax = -999, humidityCount = 0;
+      let windSum = 0, windMax = 0, windCount = 0;
+      let solarSum = 0, solarCount = 0;
+      let sunshineSum = 0, cloudSum = 0, pressureSum = 0;
+      let gddSum = 0;
+      let stressDaysCount = 0;
+
       for (const d of days) {
         const tmin = Number(d.temperature_min);
         const tmax = Number(d.temperature_max);
         if (!Number.isNaN(tmin) && !Number.isNaN(tmax)) {
           tempSum += (tmin + tmax) / 2;
+          tempMin = Math.min(tempMin, tmin);
+          tempMax = Math.max(tempMax, tmax);
           tempCount += 1;
+          
+          // Calculate GDD (base temperature 5°C for wheat)
+          const avgTemp = (tmin + tmax) / 2;
+          gddSum += Math.max(0, avgTemp - 5);
+          
+          // Count stress days
+          if (tmax > 32 || tmin < 5) stressDaysCount++;
         }
+        
         const rain = Number(d.rainfall);
         if (!Number.isNaN(rain)) precipTotal += rain;
+        
+        const humidity = Number(d.humidity);
+        if (!Number.isNaN(humidity)) {
+          humiditySum += humidity;
+          humidityMin = Math.min(humidityMin, humidity);
+          humidityMax = Math.max(humidityMax, humidity);
+          humidityCount++;
+        }
+        
+        const wind = Number(d.wind_speed);
+        if (!Number.isNaN(wind)) {
+          windSum += wind;
+          windMax = Math.max(windMax, wind);
+          windCount++;
+        }
+        
+        const solar = Number(d.solar_radiation);
+        if (!Number.isNaN(solar)) {
+          solarSum += solar;
+          solarCount++;
+        }
+        
+        const sunshine = Number(d.sunshine_hours);
+        if (!Number.isNaN(sunshine)) sunshineSum += sunshine;
+        
+        const clouds = Number(d.cloudiness);
+        if (!Number.isNaN(clouds)) cloudSum += clouds;
+        
+        const pressure = Number(d.pressure);
+        if (!Number.isNaN(pressure)) pressureSum += pressure;
       }
+
       const temperature_avg = tempCount ? Number((tempSum / tempCount).toFixed(1)) : 0;
       const precipitation_total = Number(precipTotal.toFixed(1));
+      const humidity_avg = humidityCount ? Number((humiditySum / humidityCount).toFixed(1)) : 0;
+      const wind_speed_avg = windCount ? Number((windSum / windCount).toFixed(1)) : 0;
+      const solar_radiation = solarCount ? Number((solarSum / solarCount).toFixed(1)) : 0;
+      const sunshine_hours = days.length ? Number((sunshineSum / days.length).toFixed(1)) : 0;
+      const cloudiness = days.length ? Number((cloudSum / days.length).toFixed(1)) : 0;
+      const pressure = days.length ? Number((pressureSum / days.length).toFixed(1)) : 1013;
+      const growing_degree_days = Number(gddSum.toFixed(1));
+      
+      // Calculate stress indices
+      const heat_stress_index = tempMax > 32 ? Math.min(100, (tempMax - 32) * 10) : 0;
+      const cold_stress_index = tempMin < 5 ? Math.min(100, (5 - tempMin) * 15) : 0;
+      
+      // Calculate water balance (simplified: precipitation - estimated evapotranspiration)
+      const estimatedET = Math.max(0, (temperature_avg - 5) * 0.5 * days.length);
+      const water_balance = Number((precipitation_total - estimatedET).toFixed(1));
+      const evapotranspiration = Number(estimatedET.toFixed(1));
 
+      // Enhanced alerts
       const alerts: string[] = [];
-      if (precipitation_total < 10 && temperature_avg > 15) alerts.push("Stress idrico potenziale");
+      if (heat_stress_index > 30) alerts.push("Stress termico elevato rilevato");
+      if (cold_stress_index > 20) alerts.push("Rischio stress da freddo");
+      if (water_balance < -30) alerts.push("Deficit idrico significativo");
+      if (windMax > 15) alerts.push("Venti forti possono causare danni");
+      if (precipitation_total > 80) alerts.push("Precipitazioni eccessive - rischio ristagni");
 
-      const weather: WeatherData = { temperature_avg, precipitation_total, alerts };
+      // Historical comparison (mock data for now)
+      const historical_comparison = {
+        temperature_vs_normal: Number((temperature_avg - 18).toFixed(1)), // assuming 18°C normal
+        precipitation_vs_normal: Number((precipitation_total - 45).toFixed(1)), // assuming 45mm normal
+        stress_days_count: stressDaysCount
+      };
+
+      // Fetch 7-day forecast
+      const forecastUrl = `https://api-connect.eos.com/api/cz/backend/forecast/?api_key=${apiKey}`;
+      let forecast = [];
+      try {
+        const forecastResp = await fetch(forecastUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ geometry, days: 7 }),
+        });
+        if (forecastResp.ok) {
+          const forecastData = await forecastResp.json();
+          forecast = (Array.isArray(forecastData) ? forecastData : []).slice(0, 7).map((f: any) => ({
+            date: f.date,
+            temperature_min: Number(f.temperature_min) || 0,
+            temperature_max: Number(f.temperature_max) || 0,
+            precipitation: Number(f.rainfall) || 0,
+            humidity: Number(f.humidity) || 0,
+            wind_speed: Number(f.wind_speed) || 0,
+            cloudiness: Number(f.cloudiness) || 0,
+            stress_probability: Math.min(100, Math.max(0, 
+              (Number(f.temperature_max) > 32 ? 50 : 0) + 
+              (Number(f.temperature_min) < 5 ? 30 : 0) +
+              (Number(f.wind_speed) > 15 ? 20 : 0)
+            ))
+          }));
+        }
+      } catch (e) {
+        console.log("Forecast fetch failed:", e);
+      }
+
+      const weather: WeatherData = { 
+        temperature_avg, 
+        temperature_min: tempMin === 999 ? 0 : Number(tempMin.toFixed(1)),
+        temperature_max: tempMax === -999 ? 0 : Number(tempMax.toFixed(1)),
+        precipitation_total,
+        humidity_avg,
+        humidity_min: humidityMin === 999 ? 0 : Number(humidityMin.toFixed(1)),
+        humidity_max: humidityMax === -999 ? 0 : Number(humidityMax.toFixed(1)),
+        wind_speed_avg,
+        wind_speed_max: Number(windMax.toFixed(1)),
+        solar_radiation,
+        sunshine_hours,
+        cloudiness,
+        pressure,
+        growing_degree_days,
+        heat_stress_index: Number(heat_stress_index.toFixed(1)),
+        cold_stress_index: Number(cold_stress_index.toFixed(1)),
+        water_balance,
+        evapotranspiration,
+        alerts,
+        forecast,
+        historical_comparison
+      };
 
       return new Response(
         JSON.stringify({ weather, meta: { mode: "live", start_date: sd, end_date: ed } }),

@@ -11,6 +11,7 @@ import { AdvancedNDVIChart } from "@/components/AdvancedNDVIChart";
 import { YieldPredictionCard } from "@/components/YieldPredictionCard";
 import { NitrogenAnalysisCard } from "@/components/NitrogenAnalysisCard";
 import { IntelligentAlertsCard } from "@/components/IntelligentAlertsCard";
+import { WeatherAnalyticsCard } from "@/components/WeatherAnalyticsCard";
 import { analyzeTemporalTrends } from "@/lib/eosAnalysis";
 import { generateIntelligentAlerts, AlertsBundle } from "@/lib/intelligentAlerts";
 import { calculateYieldPrediction } from "@/lib/yieldPrediction";
@@ -497,6 +498,17 @@ const EOSOutput: React.FC = () => {
               expectedYield={yieldPrediction?.predicted_yield_ton_ha || 5}
               marketPrice={250}
             />
+          )}
+
+          {/* Weather Analytics Section */}
+          {summary?.weather && (
+            <div className="space-y-4">
+              <h2 className="text-2xl font-semibold text-primary">Analisi Meteorologica Avanzata</h2>
+              <WeatherAnalyticsCard 
+                weather={summary.weather}
+                cropType={eosConfig.cropType}
+              />
+            </div>
           )}
 
           {/* Enhanced NDVI Chart */}

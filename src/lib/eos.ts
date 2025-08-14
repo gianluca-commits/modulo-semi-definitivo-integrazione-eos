@@ -110,8 +110,41 @@ export interface VegetationData {
 
 export interface WeatherData {
   temperature_avg: number; // °C
+  temperature_min: number; // °C
+  temperature_max: number; // °C
   precipitation_total: number; // mm
+  humidity_avg: number; // %
+  humidity_min: number; // %
+  humidity_max: number; // %
+  wind_speed_avg: number; // m/s
+  wind_speed_max: number; // m/s
+  solar_radiation: number; // MJ/m²/day
+  sunshine_hours: number; // hours
+  cloudiness: number; // %
+  pressure: number; // hPa
+  growing_degree_days: number; // GDD
+  heat_stress_index: number; // 0-100
+  cold_stress_index: number; // 0-100
+  water_balance: number; // mm (precipitation - evapotranspiration)
+  evapotranspiration: number; // mm
   alerts: string[];
+  forecast?: WeatherForecast[];
+  historical_comparison?: {
+    temperature_vs_normal: number; // deviation from historical average
+    precipitation_vs_normal: number; // deviation from historical average
+    stress_days_count: number; // days with thermal stress
+  };
+}
+
+export interface WeatherForecast {
+  date: string;
+  temperature_min: number;
+  temperature_max: number;
+  precipitation: number;
+  humidity: number;
+  wind_speed: number;
+  cloudiness: number;
+  stress_probability: number; // 0-100
 }
 
 export interface ProductivityData {
@@ -251,8 +284,29 @@ export function demoVegetation(): VegetationData {
 export function demoWeather(): WeatherData {
   return {
     temperature_avg: 11.8,
+    temperature_min: 8.2,
+    temperature_max: 15.4,
     precipitation_total: 145.2,
+    humidity_avg: 72.5,
+    humidity_min: 65.0,
+    humidity_max: 80.0,
+    wind_speed_avg: 3.2,
+    wind_speed_max: 8.1,
+    solar_radiation: 15.3,
+    sunshine_hours: 6.8,
+    cloudiness: 45.2,
+    pressure: 1013.5,
+    growing_degree_days: 156.7,
+    heat_stress_index: 12.5,
+    cold_stress_index: 8.3,
+    water_balance: -32.1,
+    evapotranspiration: 177.3,
     alerts: ["Stress idrico rilevato"],
+    historical_comparison: {
+      temperature_vs_normal: -2.3,
+      precipitation_vs_normal: 25.8,
+      stress_days_count: 3
+    }
   };
 }
 
@@ -348,11 +402,11 @@ export async function getWeatherSummary(
 
   if (error) {
     console.error("eos-proxy weather error:", error);
-    return { temperature_avg: 0, precipitation_total: 0, alerts: [] };
+    return demoWeather();
   }
   if (!data || !("weather" in data)) {
     console.warn("eos-proxy weather invalid response", data);
-    return { temperature_avg: 0, precipitation_total: 0, alerts: [] };
+    return demoWeather();
   }
 
   return data.weather as WeatherData;
@@ -392,6 +446,7 @@ export interface EosSummary {
     frost_risk_forecast_7d?: boolean;
     heat_stress_risk?: "low" | "medium" | "high";
   };
+  weather?: WeatherData;
   // Optional NDVI/NDMI time series for charting without extra calls
   ndvi_series?: VegetationPoint[];
   meta?: {
