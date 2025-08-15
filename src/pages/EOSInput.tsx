@@ -80,42 +80,6 @@ const EOSInput: React.FC = () => {
   const [polygonOptions, setPolygonOptions] = useState<{ id: string; label: string; coordinates: [number, number][]; area_ha: number }[]>([]);
   const [inputMode, setInputMode] = useState<"map" | "file">("map");
   
-  // Mapbox token state
-  const [mapboxToken, setMapboxToken] = useState<string>("");
-  const [isLoadingToken, setIsLoadingToken] = useState(true);
-  const [manualToken, setManualToken] = useState<string>("");
-  const [tokenError, setTokenError] = useState<string>("");
-
-  // Fetch Mapbox token on component mount
-  useEffect(() => {
-    const fetchMapboxToken = async () => {
-      try {
-        console.log('Fetching Mapbox token...');
-        const { data, error } = await supabase.functions.invoke('mapbox-config');
-        
-        console.log('Mapbox config response:', { data, error });
-        
-        if (error) {
-          console.error('Supabase function error:', error);
-          setTokenError(`Errore configurazione: ${error.message || 'Impossibile caricare il token'}`);
-        } else if (data?.mapboxToken) {
-          console.log('Mapbox token received successfully');
-          setMapboxToken(data.mapboxToken);
-          setTokenError("");
-        } else {
-          console.warn('No mapbox token in response:', data);
-          setTokenError("Token Mapbox non configurato nei secrets di Supabase");
-        }
-      } catch (error) {
-        console.error('Error calling mapbox-config function:', error);
-        setTokenError(`Errore di rete: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`);
-      } finally {
-        setIsLoadingToken(false);
-      }
-    };
-
-    fetchMapboxToken();
-  }, []);
 
   // Intelligent date range calculation
   const intelligentDateRange = useMemo(() => {
@@ -309,40 +273,6 @@ const EOSInput: React.FC = () => {
     navigate("/output");
   };
 
-  // Debug rendering
-  console.log('EOSInput render:', { 
-    isLoadingToken, 
-    tokenError, 
-    mapboxToken: mapboxToken ? 'present' : 'missing',
-    inputMode,
-    polygonData: polygonData.geojson ? 'present' : 'missing'
-  });
-
-  // Test render - simple fallback to see if page loads
-  if (isLoadingToken && !mapboxToken) {
-    return (
-      <main className="min-h-screen bg-background">
-        <header className="border-b border-border bg-card">
-          <div className="max-w-6xl mx-auto px-4 py-6 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <MapPin className="w-6 h-6 text-foreground" />
-              <h1 className="text-2xl font-bold text-foreground">Analisi Campo - Input</h1>
-            </div>
-          </div>
-        </header>
-        <section className="max-w-6xl mx-auto px-4 py-8">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center space-x-2">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Caricamento configurazione mappa...</span>
-              </div>
-            </CardContent>
-          </Card>
-        </section>
-      </main>
-    );
-  }
 
   return (
     <main className="min-h-screen bg-background">
@@ -383,60 +313,9 @@ const EOSInput: React.FC = () => {
               </div>
 
               {inputMode === "map" && (
-                <>
-                  {isLoadingToken && (
-                    <Card>
-                      <CardContent className="p-6">
-                        <div className="flex items-center space-x-2">
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-                          <span>Caricamento configurazione mappa...</span>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-                  
-                  {!isLoadingToken && tokenError && !mapboxToken && !manualToken && (
-                    <Card>
-                      <CardContent className="p-6 space-y-4">
-                        <Alert variant="destructive">
-                          <AlertCircle className="h-4 w-4" />
-                          <AlertDescription>
-                            {tokenError}
-                          </AlertDescription>
-                        </Alert>
-                        
-                        <div className="space-y-2">
-                          <Label htmlFor="manual-token">Inserisci token Mapbox manualmente (opzionale)</Label>
-                          <div className="flex space-x-2">
-                            <Input
-                              id="manual-token"
-                              placeholder="pk.eyJ1..."
-                              value={manualToken}
-                              onChange={(e) => setManualToken(e.target.value)}
-                              className="flex-1"
-                            />
-                            <Button
-                              onClick={() => setMapboxToken(manualToken)}
-                              disabled={!manualToken.startsWith('pk.')}
-                            >
-                              Usa Token
-                            </Button>
-                          </div>
-                          <p className="text-sm text-muted-foreground">
-                            Ottieni un token gratuito su{' '}
-                            <a href="https://mapbox.com/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                              mapbox.com
-                            </a>
-                          </p>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-                  
-                  <MapSelector
-                    onPolygonSelect={handleMapPolygonSelect}
-                  />
-                </>
+                <MapSelector 
+                  onPolygonSelect={handleMapPolygonSelect} 
+                />
               )}
 
               {inputMode === "file" && (

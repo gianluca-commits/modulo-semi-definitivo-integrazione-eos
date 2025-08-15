@@ -45,7 +45,7 @@ const EOSOutput: React.FC = () => {
   const navigate = useNavigate();
   const [polygon, setPolygon] = useState<PolygonData | null>(null);
   const [userCfg, setUserCfg] = useState<any>(null);
-  const [mapboxToken, setMapboxToken] = useState<string>("");
+  
   const [summary, setSummary] = useState<EosSummary | null>(null);
   const [vegetationHealth, setVegetationHealth] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -143,20 +143,6 @@ const EOSOutput: React.FC = () => {
         } catch {}
       }
 
-      // Fetch Mapbox token for visualization
-      const fetchMapboxToken = async () => {
-        try {
-          const {
-            data
-          } = await supabase.functions.invoke('mapbox-config');
-          if (data?.mapboxToken) {
-            setMapboxToken(data.mapboxToken);
-          }
-        } catch (error) {
-          console.warn('Failed to fetch Mapbox token for visualization:', error);
-        }
-      };
-      fetchMapboxToken();
     } catch (e) {
       navigate("/");
     }
