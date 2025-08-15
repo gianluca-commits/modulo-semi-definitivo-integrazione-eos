@@ -6,7 +6,26 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-interface Coordinate extends Array<number> { 0: number; 1: number }
+// Force 2D coordinates for EOS API compatibility
+type Coordinate = [number, number]; // [lon, lat] - strictly 2D
+
+// Utility function to clean coordinates and ensure 2D format
+const cleanCoordinates = (coords: any[]): Coordinate[] => {
+  console.log('EOS Debug - Input coordinates:', coords.slice(0, 2), '...(truncated)');
+  const cleaned = coords.map(coord => {
+    if (Array.isArray(coord)) {
+      // Force 2D by taking only first two elements
+      const cleaned2D: Coordinate = [coord[0], coord[1]];
+      if (coord.length > 2) {
+        console.log('EOS Debug - Removed elevation from coordinate:', coord, '-> cleaned:', cleaned2D);
+      }
+      return cleaned2D;
+    }
+    return coord;
+  });
+  console.log('EOS Debug - Cleaned coordinates sample:', cleaned.slice(0, 2), '...(truncated)');
+  return cleaned;
+};
 interface PolygonData {
   geojson?: string;
   coordinates?: Coordinate[];
@@ -97,13 +116,15 @@ serve(async (req) => {
         );
       }
 
-      // Build GeoJSON geometry from input
+      // Build GeoJSON geometry from input with 2D coordinate cleaning
       const buildGeometry = () => {
         if (polygon?.coordinates && polygon.coordinates.length >= 4) {
-          const coords = polygon.coordinates as unknown as [number, number][];
+          console.log('EOS Debug - Raw polygon coordinates received:', polygon.coordinates.slice(0, 3));
+          const coords = cleanCoordinates(polygon.coordinates);
           const first = coords[0];
           const last = coords[coords.length - 1];
           const ring = first[0] === last[0] && first[1] === last[1] ? coords : [...coords, first];
+          console.log('EOS Debug - Final ring coordinates sample:', ring.slice(0, 2), '...(truncated)');
           return { type: "Polygon", coordinates: [ring] } as const;
         }
         if (polygon?.geojson) {
@@ -297,13 +318,15 @@ serve(async (req) => {
         );
       }
 
-      // Build GeoJSON geometry
+      // Build GeoJSON geometry with 2D coordinate cleaning (weather endpoint)
       const buildGeometry = () => {
         if (polygon?.coordinates && polygon.coordinates.length >= 4) {
-          const coords = polygon.coordinates as unknown as [number, number][];
+          console.log('EOS Debug - Raw weather coordinates received:', polygon.coordinates.slice(0, 3));
+          const coords = cleanCoordinates(polygon.coordinates);
           const first = coords[0];
           const last = coords[coords.length - 1];
           const ring = first[0] === last[0] && first[1] === last[1] ? coords : [...coords, first];
+          console.log('EOS Debug - Final weather ring coordinates sample:', ring.slice(0, 2), '...(truncated)');
           return { type: "Polygon", coordinates: [ring] } as const;
         }
         if (polygon?.geojson) {
@@ -499,13 +522,15 @@ serve(async (req) => {
         );
       }
 
-      // Build GeoJSON geometry
+      // Build GeoJSON geometry with 2D coordinate cleaning (summary endpoint)
       const buildGeometry = () => {
         if (polygon?.coordinates && polygon.coordinates.length >= 4) {
-          const coords = polygon.coordinates as unknown as [number, number][];
+          console.log('EOS Debug - Raw summary coordinates received:', polygon.coordinates.slice(0, 3));
+          const coords = cleanCoordinates(polygon.coordinates);
           const first = coords[0];
           const last = coords[coords.length - 1];
           const ring = first[0] === last[0] && first[1] === last[1] ? coords : [...coords, first];
+          console.log('EOS Debug - Final summary ring coordinates sample:', ring.slice(0, 2), '...(truncated)');
           return { type: "Polygon", coordinates: [ring] } as const;
         }
         if (polygon?.geojson) {
