@@ -301,14 +301,19 @@ const EOSOutput: React.FC = () => {
       </header>
 
       <section className="max-w-6xl mx-auto px-4 py-6 space-y-6">
-        {/* Field Information Header */}
-        <div className="grid md:grid-cols-3 gap-4">
-          <Card className="md:col-span-2">
-            <CardHeader>
-              <CardTitle>Campo Analizzato</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid md:grid-cols-3 gap-4 text-sm">
+        {/* Polygon Visualization */}
+        {polygon && <GoogleMapsVisualization polygon={polygon} title="Campo Analizzato" description={`${polygon.source} • ${userCfg.cropType} • ${polygon.area_ha} ha`} />}
+
+        {/* Unified Field and Parameters Information */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Dettagli campo e parametri</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Field Information */}
+            <div>
+              <h3 className="text-lg font-semibold mb-3">Campo Analizzato</h3>
+              <div className="grid md:grid-cols-4 gap-4 text-sm">
                 <div>
                   <span className="text-muted-foreground">Area:</span>
                   <p className="font-medium">{polygon.area_ha} ha</p>
@@ -321,20 +326,77 @@ const EOSOutput: React.FC = () => {
                   <span className="text-muted-foreground">Coltura:</span>
                   <p className="font-medium">{userCfg.cropType}</p>
                 </div>
+                <div>
+                  <span className="text-muted-foreground">Coordinate:</span>
+                  <p className="font-medium">{polygon.coordinates.length} punti</p>
+                </div>
               </div>
-            </CardContent>
-          </Card>
-          
-          {/* EOS Parameter Display */}
-          <EosParameterDisplay summary={summary} optimizationProfile={optimalProfile?.description} />
-        </div>
+            </div>
+            
+            {/* EOS Parameters */}
+            {summary?.meta && (
+              <div>
+                <h3 className="text-lg font-semibold mb-3">Parametri EOS Utilizzati</h3>
+                <div className="grid md:grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Max copertura nuvolosa:</span>
+                    <p className="font-medium">{summary.meta.used_filters?.max_cloud_cover_in_aoi || 50}%</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Esclusione pixel:</span>
+                    <p className="font-medium">{summary.meta.used_filters?.exclude_cover_pixels ? 'Sì' : 'No'}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Livello mascheratura:</span>
+                    <p className="font-medium">{summary.meta.used_filters?.cloud_masking_level || 1}</p>
+                  </div>
+                </div>
+                {optimalProfile?.description && (
+                  <div className="mt-3">
+                    <Badge variant="secondary">{optimalProfile.description}</Badge>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* User Configuration */}
+            <div>
+              <h3 className="text-lg font-semibold mb-3">Impostazioni Utente</h3>
+              <div className="grid md:grid-cols-3 gap-4 text-sm">
+                <div>
+                  <span className="text-muted-foreground">Irrigazione:</span>
+                  <p className="font-medium">{userCfg.irrigation}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Fertilizzazione:</span>
+                  <p className="font-medium">{userCfg.fertilization}</p>
+                </div>
+                {userCfg.planting_date && (
+                  <div>
+                    <span className="text-muted-foreground">Semina:</span>
+                    <p className="font-medium">{userCfg.planting_date}</p>
+                  </div>
+                )}
+                <div>
+                  <span className="text-muted-foreground">Periodo analisi:</span>
+                  <p className="font-medium">{userCfg.start_date} → {userCfg.end_date}</p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-        {/* Polygon Visualization */}
-        {polygon && <GoogleMapsVisualization polygon={polygon} title="Campo Analizzato" description={`${polygon.source} • ${userCfg.cropType} • ${polygon.area_ha} ha`} />}
+        {/* Loading Message */}
+        {loading && (
+          <Alert variant="default">
+            <AlertTitle>Caricamento in corso ...</AlertTitle>
+            <AlertDescription>Recupero dati da EOS e calcolo degli indici. Attendere...</AlertDescription>
+          </Alert>
+        )}
 
-        {usingSaved || noRealObs}
-
-        {summary?.meta?.observation_count === 0 && <Alert variant="destructive">
+        {/* No Observations Alert */}
+        {summary?.meta?.observation_count === 0 && !loading && (
+          <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Nessuna Osservazione Trovata</AlertTitle>
             <AlertDescription className="space-y-2">
@@ -348,31 +410,17 @@ const EOSOutput: React.FC = () => {
                 </ul>
               </div>
               <Button variant="outline" size="sm" onClick={() => {
-            setUsePermissiveFilters(true);
-            setShowDemo(false);
-            setRefreshKey(k => k + 1);
-          }} className="mt-2">
+                setUsePermissiveFilters(true);
+                setShowDemo(false);
+                setRefreshKey(k => k + 1);
+              }} className="mt-2">
                 Riprova con Filtri Estesi
               </Button>
             </AlertDescription>
-          </Alert>}
+          </Alert>
+        )}
 
-        <div className="grid lg:grid-cols-3 gap-6">
-        <aside className="bg-card rounded-xl border border-border p-6">
-          <h2 className="text-lg font-semibold text-foreground mb-4">Impostazioni</h2>
-          <div className="text-sm text-muted-foreground space-y-1">
-            <p>Coltura: <span className="text-foreground font-medium">{userCfg.cropType}</span></p>
-            <p>Irrigazione: <span className="text-foreground font-medium">{userCfg.irrigation}</span></p>
-            <p>Fertilizzazione: <span className="text-foreground font-medium">{userCfg.fertilization}</span></p>
-            {userCfg.planting_date && <p>Semina: <span className="text-foreground font-medium">{userCfg.planting_date}</span></p>}
-            <p>Periodo: <span className="text-foreground font-medium">{userCfg.start_date} → {userCfg.end_date}</span></p>
-            <p>Area: <span className="text-foreground font-medium">{Number(userCfg.area_ha ?? polygon.area_ha).toLocaleString('it-IT', {
-                  maximumFractionDigits: 2
-                })} ha</span></p>
-          </div>
-        </aside>
-
-        <article className="lg:col-span-2 space-y-6">
+        <div className="space-y-6">
           {/* Intelligent Alerts */}
           {alertsBundle && <IntelligentAlertsCard alertsBundle={alertsBundle} />}
 
@@ -472,11 +520,8 @@ const EOSOutput: React.FC = () => {
 
           {/* Productivity */}
           
-        </article>
         </div>
       </section>
-
-      {loading && <div className="max-w-6xl mx-auto px-4 pb-8 text-sm text-muted-foreground">Caricamento in corso…</div>}
     </main>;
 };
 export default EOSOutput;
