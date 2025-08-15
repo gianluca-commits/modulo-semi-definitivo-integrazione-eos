@@ -35,9 +35,9 @@ export function analyzeVegetationHealth(
   timeSeries: VegetationPoint[]
 ): VegetationHealthAnalysis {
   
-  // Calculate NDVI statistics from time series
-  const ndviValues = timeSeries.map(p => p.NDVI);
-  const currentNDVI = eosData.ndvi_data.current_value;
+  // Calculate NDVI statistics from time series with fallback values
+  const ndviValues = timeSeries.map(p => p.NDVI).filter(v => v != null && !isNaN(v));
+  const currentNDVI = eosData.ndvi_data?.current_value ?? 0.4; // Fallback for missing data
   const avgNDVI = ndviValues.length > 0 
     ? ndviValues.reduce((sum, val) => sum + val, 0) / ndviValues.length 
     : currentNDVI;
@@ -54,8 +54,8 @@ export function analyzeVegetationHealth(
   else if (currentNDVI >= 0.3) ndviScore = 20;
   else ndviScore = 10;
 
-  // NDMI contribution score (water stress indicator)
-  const currentNDMI = eosData.ndmi_data.current_value;
+  // NDMI contribution score (water stress indicator) with fallback
+  const currentNDMI = eosData.ndmi_data?.current_value ?? 0.3; // Fallback for missing data
   let ndmiScore = 0;
   let waterStressLevel: 'none' | 'mild' | 'moderate' | 'severe' = 'none';
   
@@ -76,25 +76,28 @@ export function analyzeVegetationHealth(
     waterStressLevel = 'severe';
   }
 
-  // Weather contribution score
+  // Weather contribution score with fallback
   let weatherScore = 75; // Base score
-  const weatherRisks = eosData.weather_risks;
+  const weatherRisks = eosData.weather_risks || {}; // Fallback for missing weather data
   
-  // Temperature stress penalty
-  if (weatherRisks.temperature_stress_days > 15) weatherScore -= 25;
-  else if (weatherRisks.temperature_stress_days > 10) weatherScore -= 15;
-  else if (weatherRisks.temperature_stress_days > 5) weatherScore -= 8;
+  // Temperature stress penalty with safe access
+  const tempStressDays = weatherRisks.temperature_stress_days || 0;
+  if (tempStressDays > 15) weatherScore -= 25;
+  else if (tempStressDays > 10) weatherScore -= 15;
+  else if (tempStressDays > 5) weatherScore -= 8;
   
-  // Precipitation deficit penalty
-  if (weatherRisks.precipitation_deficit_mm > 75) weatherScore -= 20;
-  else if (weatherRisks.precipitation_deficit_mm > 50) weatherScore -= 12;
-  else if (weatherRisks.precipitation_deficit_mm > 25) weatherScore -= 6;
+  // Precipitation deficit penalty with safe access
+  const precipDeficit = weatherRisks.precipitation_deficit_mm || 0;
+  if (precipDeficit > 75) weatherScore -= 20;
+  else if (precipDeficit > 50) weatherScore -= 12;
+  else if (precipDeficit > 25) weatherScore -= 6;
   
-  // Heat stress penalty
-  if (weatherRisks.heat_stress_risk === 'high') weatherScore -= 15;
-  else if (weatherRisks.heat_stress_risk === 'medium') weatherScore -= 8;
+  // Heat stress penalty with safe access
+  const heatStressRisk = weatherRisks.heat_stress_risk || 'low';
+  if (heatStressRisk === 'high') weatherScore -= 15;
+  else if (heatStressRisk === 'medium') weatherScore -= 8;
   
-  // Frost risk penalty
+  // Frost risk penalty with safe access
   if (weatherRisks.frost_risk_forecast_7d) weatherScore -= 10;
 
   weatherScore = Math.max(5, Math.min(100, weatherScore));
@@ -170,9 +173,9 @@ export function analyzeVegetationHealth(
   else if (timeSeries.length >= 3) confidence += 10;
   else if (timeSeries.length >= 1) confidence += 5;
   
-  // Quality of current readings
-  if (currentNDVI > 0.1) confidence += 5;
-  if (currentNDMI > 0.1) confidence += 5;
+  // Quality of current readings with safe checks
+  if ((currentNDVI || 0) > 0.1) confidence += 5;
+  if ((currentNDMI || 0) > 0.1) confidence += 5;
   
   // Soil moisture data availability
   if (eosData.soil_moisture) confidence += 10;
@@ -206,12 +209,12 @@ export function analyzeVegetationHealth(
     recommendations.push("📈 NDVI sotto-ottimale: considerare fertilizzazione azotata");
   }
   
-  // Weather-based recommendations
-  if (weatherRisks.temperature_stress_days > 10) {
+  // Weather-based recommendations with safe access
+  if (tempStressDays > 10) {
     recommendations.push("🌡️ Stress termico rilevato: monitorare e proteggere la coltura");
   }
   
-  if (weatherRisks.precipitation_deficit_mm > 50) {
+  if (precipDeficit > 50) {
     recommendations.push("☔ Deficit pluviometrico significativo: programmare irrigazione supplementare");
   }
   
@@ -223,25 +226,25 @@ export function analyzeVegetationHealth(
   }
 
   return {
-    health_index: Number(healthIndex.toFixed(1)),
+    health_index: Number((healthIndex || 0).toFixed(1)),
     confidence_level: confidence,
     health_class: healthClass,
     eos_factors: {
-      ndvi_contribution: Number(ndviScore.toFixed(1)),
-      ndmi_contribution: Number(ndmiScore.toFixed(1)),
-      weather_contribution: Number(weatherScore.toFixed(1)),
+      ndvi_contribution: Number((ndviScore || 0).toFixed(1)),
+      ndmi_contribution: Number((ndmiScore || 0).toFixed(1)),
+      weather_contribution: Number((weatherScore || 0).toFixed(1)),
       soil_moisture_contribution: soilMoistureScore ? Number(soilMoistureScore.toFixed(1)) : undefined,
       temporal_trend: temporalTrend,
       data_points: timeSeries.length
     },
     technical_indicators: {
-      current_ndvi: Number(currentNDVI.toFixed(3)),
+      current_ndvi: Number((currentNDVI || 0).toFixed(3)),
       ndvi_range: {
-        min: Number(minNDVI.toFixed(3)),
-        max: Number(maxNDVI.toFixed(3)),
-        avg: Number(avgNDVI.toFixed(3))
+        min: Number((minNDVI || 0).toFixed(3)),
+        max: Number((maxNDVI || 0).toFixed(3)),
+        avg: Number((avgNDVI || 0).toFixed(3))
       },
-      current_ndmi: Number(currentNDMI.toFixed(3)),
+      current_ndmi: Number((currentNDMI || 0).toFixed(3)),
       water_stress_level: waterStressLevel,
       vegetation_vigor: vegetationVigor
     },
