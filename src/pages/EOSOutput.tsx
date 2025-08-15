@@ -17,7 +17,7 @@ import { analyzeTemporalTrends } from "@/lib/eosAnalysis";
 import { generateIntelligentAlerts, AlertsBundle } from "@/lib/intelligentAlerts";
 import { analyzeVegetationHealth } from "@/lib/vegetationHealth";
 import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { BarChart3, ArrowLeft, ThermometerSun, Droplets, Leaf, Activity, Download, AlertCircle, RefreshCw } from "lucide-react";
+import { BarChart3, ArrowLeft, ThermometerSun, Droplets, Leaf, Activity, Download, AlertCircle, RotateCw } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -463,7 +463,7 @@ const EOSOutput: React.FC = () => {
                     <Button variant="outline" size="sm" onClick={() => {
                       setRefreshKey(k => k + 1);
                     }}>
-                      <RefreshCw className="w-4 h-4 mr-1" />
+                      <RotateCw className="w-4 h-4 mr-1" />
                       Riprova
                     </Button>
                     <Button variant="outline" size="sm" onClick={() => {
