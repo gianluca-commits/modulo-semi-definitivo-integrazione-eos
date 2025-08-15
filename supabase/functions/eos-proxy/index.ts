@@ -142,13 +142,22 @@ serve(async (req) => {
 
       const geometry = buildGeometry();
 
+      // Dynamic date calculation based on planting_date or fallback
       const sd = start_date ?? new Date(Date.now() - 60 * 24 * 3600 * 1000).toISOString().slice(0, 10);
       const ed = end_date ?? new Date().toISOString().slice(0, 10);
+      
+      console.log('EOS Proxy Debug - Date calculation:', {
+        start_date_input: start_date,
+        end_date_input: end_date,
+        calculated_start: sd,
+        calculated_end: ed,
+        period_days: Math.floor((new Date(ed).getTime() - new Date(sd).getTime()) / (1000 * 60 * 60 * 24))
+      });
 
-      // Read optional filters from request (with optimized defaults for Italy)
+      // Read optional filters from request (with EOS standard defaults)
       const maxCloud = typeof (body as any)?.max_cloud_cover_in_aoi === "number"
         ? Math.max(0, Math.min(100, (body as any).max_cloud_cover_in_aoi))
-        : 15; // Optimized default for Italy summer
+        : 50; // EOS standard cloud filtering (50%)
       const excludeCover = typeof (body as any)?.exclude_cover_pixels === "boolean"
         ? (body as any).exclude_cover_pixels
         : false; // More permissive default
@@ -233,8 +242,8 @@ serve(async (req) => {
       if (initialDates.length === 0) {
         // Intelligent fallback with escalating permissiveness
         fallback_used = true;
-        // First fallback: more permissive but still reasonable
-        let tMaxCloud = Math.max(maxCloud * 2, 40); // Double current or minimum 40%
+        // First fallback: more permissive but still reasonable 
+        let tMaxCloud = Math.max(maxCloud * 1.4, 70); // 40% increase or minimum 70%
         let tExclude = false;
         let tCml = Math.max(0, cml - 1); // Reduce masking level
         console.log("EOS stats empty, retrying with permissive filters", { tMaxCloud, tExclude, tCml });

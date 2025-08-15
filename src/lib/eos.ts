@@ -35,33 +35,33 @@ export interface EosParameterProfile {
 }
 
 export const EOS_PARAMETER_PROFILES: Record<string, EosParameterProfile> = {
-  // Italy summer (June-August): minimal cloud cover expected
+  // Italy summer (June-August): EOS standard cloud filtering (50%)
   "italy_summer": {
-    max_cloud_cover_in_aoi: 15,
+    max_cloud_cover_in_aoi: 50,
     exclude_cover_pixels: false,
     cloud_masking_level: 1,
-    description: "Italia estate - copertura nuvolosa minima"
+    description: "Italia estate - filtro nuvole standard EOS (50%)"
   },
-  // Italy winter (December-February): more clouds expected
+  // Italy winter (December-February): EOS standard cloud filtering
   "italy_winter": {
-    max_cloud_cover_in_aoi: 40,
+    max_cloud_cover_in_aoi: 50,
     exclude_cover_pixels: false,
     cloud_masking_level: 1,
-    description: "Italia inverno - maggiore copertura nuvolosa"
+    description: "Italia inverno - filtro nuvole standard EOS (50%)"
   },
-  // Italy spring/autumn: moderate cloud cover
+  // Italy spring/autumn: EOS standard cloud filtering
   "italy_moderate": {
-    max_cloud_cover_in_aoi: 25,
+    max_cloud_cover_in_aoi: 50,
     exclude_cover_pixels: false,
     cloud_masking_level: 1,
-    description: "Italia primavera/autunno - copertura moderata"
+    description: "Italia primavera/autunno - filtro nuvole standard EOS (50%)"
   },
   // Default Europe profile
   "europe_default": {
-    max_cloud_cover_in_aoi: 25,
+    max_cloud_cover_in_aoi: 50,
     exclude_cover_pixels: false,
     cloud_masking_level: 1,
-    description: "Europa standard - parametri moderati"
+    description: "Europa standard - filtro nuvole standard EOS (50%)"
   },
   // Fallback profiles for escalation
   "permissive": {
@@ -508,7 +508,22 @@ export async function getEosSummary(
   _polygon: PolygonData,
   config: EosConfig
 ): Promise<EosSummary> {
-  if (config.apiKey === "demo") {
+  // Calculate dynamic dates: start from planting_date, end today
+  const today = new Date().toISOString().slice(0, 10);
+  const dynamicConfig = {
+    ...config,
+    start_date: config.planting_date || config.start_date || new Date(Date.now() - 60 * 24 * 3600 * 1000).toISOString().slice(0, 10),
+    end_date: config.end_date || today
+  };
+  
+  console.log('EOS Debug - Dynamic dates calculated:', {
+    planting_date: config.planting_date,
+    start_date: dynamicConfig.start_date,
+    end_date: dynamicConfig.end_date,
+    period_days: Math.floor((new Date(dynamicConfig.end_date).getTime() - new Date(dynamicConfig.start_date).getTime()) / (1000 * 60 * 60 * 24))
+  });
+
+  if (dynamicConfig.apiKey === "demo") {
     // Build a synthetic summary from demo data
     const veg = demoVegetation();
     const met = demoWeather();
@@ -562,7 +577,14 @@ export async function getEosSummary(
   }
 
   // Apply optimal parameters based on location and season
-  const optimizedConfig = applyEosParametersWithFallback(config, _polygon);
+  const optimizedConfig = applyEosParametersWithFallback(dynamicConfig, _polygon);
+  
+  console.log('EOS Debug - Optimized config with dynamic dates:', {
+    start_date: optimizedConfig.start_date,
+    end_date: optimizedConfig.end_date,
+    max_cloud_cover_in_aoi: optimizedConfig.max_cloud_cover_in_aoi,
+    planting_date: optimizedConfig.planting_date
+  });
   
   // Enhanced retry mechanism with escalating parameters
   const attemptInvoke = async (attempt: number, useEscalation = false) => {
