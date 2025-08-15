@@ -9,15 +9,15 @@ import { EosParameterDisplay } from "@/components/EosParameterDisplay";
 import { HealthStatusCard } from "@/components/HealthStatusCard";
 import { WaterStressAlert } from "@/components/WaterStressAlert";
 import { AdvancedNDVIChart } from "@/components/AdvancedNDVIChart";
-import { YieldPredictionCard } from "@/components/YieldPredictionCard";
+import { VegetationHealthCard } from "@/components/VegetationHealthCard";
 import { NitrogenAnalysisCard } from "@/components/NitrogenAnalysisCard";
 import { IntelligentAlertsCard } from "@/components/IntelligentAlertsCard";
 import { WeatherAnalyticsCard } from "@/components/WeatherAnalyticsCard";
 import { SoilMoistureAnalyticsCard } from "@/components/SoilMoistureAnalyticsCard";
 import { analyzeTemporalTrends } from "@/lib/eosAnalysis";
 import { generateIntelligentAlerts, AlertsBundle } from "@/lib/intelligentAlerts";
-import { calculateYieldPrediction } from "@/lib/yieldPrediction";
-import type { YieldPredictionResponse } from "@/lib/eos";
+import { analyzeVegetationHealth } from "@/lib/vegetationHealth";
+
 import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { BarChart3, ArrowLeft, ThermometerSun, Droplets, Leaf, Activity, Download, AlertCircle } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -51,9 +51,9 @@ const EOSOutput: React.FC = () => {
   const [userCfg, setUserCfg] = useState<any>(null);
   const [mapboxToken, setMapboxToken] = useState<string>("");
   const [summary, setSummary] = useState<EosSummary | null>(null);
-  const [yieldPrediction, setYieldPrediction] = useState<YieldPredictionResponse | null>(null);
+  const [vegetationHealth, setVegetationHealth] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const [isLoadingYield, setIsLoadingYield] = useState(false);
+  const [isLoadingHealth, setIsLoadingHealth] = useState(false);
   const [usingSaved, setUsingSaved] = useState(false);
   const [alertsBundle, setAlertsBundle] = useState<AlertsBundle | null>(null);
   const [savedBundle, setSavedBundle] = useState<{
@@ -176,18 +176,18 @@ const EOSOutput: React.FC = () => {
         setUsingSaved(false);
         setShowDemo(false);
 
-        // Generate yield prediction using internal algorithm with real EOS data
-        setIsLoadingYield(true);
+        // Analyze vegetation health using EOS data
+        setIsLoadingHealth(true);
         try {
-          console.log("Calculating yield prediction from EOS data...");
-          const yieldData = calculateYieldPrediction(sumRes, eosConfig.cropType, ts);
-          console.log("Yield prediction calculated:", yieldData);
-          setYieldPrediction(yieldData);
-        } catch (yieldErr) {
-          console.error("Error calculating yield prediction:", yieldErr);
-          // Don't set error for yield prediction, just log it
+          console.log("Analyzing vegetation health from EOS data...");
+          const healthData = analyzeVegetationHealth(sumRes, eosConfig.cropType, ts);
+          console.log("Vegetation health analyzed:", healthData);
+          setVegetationHealth(healthData);
+        } catch (healthErr) {
+          console.error("Error analyzing vegetation health:", healthErr);
+          // Don't set error for health analysis, just log it
         } finally {
-          setIsLoadingYield(false);
+          setIsLoadingHealth(false);
         }
 
         // Generate intelligent alerts
@@ -442,8 +442,8 @@ const EOSOutput: React.FC = () => {
               />
             )}
 
-            {/* Yield Prediction Card */}
-            {isLoadingYield ? (
+            {/* Vegetation Health Analysis Card */}
+            {isLoadingHealth ? (
               <Card className="w-full">
                 <CardContent className="p-6">
                   <div className="flex items-center justify-center h-32">
@@ -451,25 +451,21 @@ const EOSOutput: React.FC = () => {
                   </div>
                 </CardContent>
               </Card>
-            ) : yieldPrediction ? (
-              <YieldPredictionCard 
-                prediction={calculateYieldPrediction(summary || {
-                  ndvi_data: { current_value: 0.6 },
-                  ndmi_data: { current_value: 0.4 },
-                  weather_risks: {
-                    temperature_stress_days: 0,
-                    precipitation_deficit_mm: 0,
-                    frost_risk_forecast_7d: false,
-                    heat_stress_risk: "low"
-                  }
-                } as any, userCfg?.cropType || "sunflower", summary?.ndvi_series || [])}
+            ) : vegetationHealth ? (
+              <VegetationHealthCard 
+                analysis={vegetationHealth}
+                cropType={userCfg?.cropType || "sunflower"}
+              />
+            ) : summary ? (
+              <VegetationHealthCard 
+                analysis={analyzeVegetationHealth(summary, userCfg?.cropType || "sunflower", summary?.ndvi_series || [])}
                 cropType={userCfg?.cropType || "sunflower"}
               />
             ) : (
               <Card className="w-full">
                 <CardContent className="p-6">
                   <div className="text-center text-muted-foreground">
-                    <p>Predizione resa non disponibile</p>
+                    <p>Analisi salute vegetazione non disponibile</p>
                     <p className="text-sm mt-2">Riprova più tardi</p>
                   </div>
                 </CardContent>
@@ -535,7 +531,7 @@ const EOSOutput: React.FC = () => {
               reci={ts[ts.length - 1].ReCI}
               previousReci={ts[ts.length - 2]?.ReCI}
               cropType={userCfg?.cropType || "sunflower"}
-              expectedYield={yieldPrediction?.predicted_yield_ton_ha || 5}
+              expectedYield={5} // Default value since we removed yield prediction
               marketPrice={250}
             />
           )}
