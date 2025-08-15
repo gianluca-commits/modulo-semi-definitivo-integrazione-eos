@@ -383,6 +383,50 @@ const EOSOutput: React.FC = () => {
                 </div>
               </div>
             </div>
+
+            {/* EOS Data Quality */}
+            {summary && (
+              <div>
+                <h3 className="text-lg font-semibold mb-3">Qualità dati EOS</h3>
+                <div className="grid md:grid-cols-3 gap-4 text-sm">
+                  {summary.ndvi_data?.uniformity_score !== undefined && (
+                    <div>
+                      <span className="text-muted-foreground">Uniformità NDVI:</span>
+                      <div className="flex items-center gap-2 mt-1">
+                        <p className="font-medium">{(summary.ndvi_data.uniformity_score * 100).toFixed(1)}%</p>
+                        <Badge variant={
+                          summary.ndvi_data.uniformity_score >= 0.8 ? "default" : 
+                          summary.ndvi_data.uniformity_score >= 0.6 ? "secondary" : 
+                          "outline"
+                        }>
+                          {summary.ndvi_data.uniformity_score >= 0.8 ? "Alta" : 
+                           summary.ndvi_data.uniformity_score >= 0.6 ? "Media" : 
+                           "Bassa"}
+                        </Badge>
+                      </div>
+                    </div>
+                  )}
+                  {summary.meta?.observation_count !== undefined && (
+                    <div>
+                      <span className="text-muted-foreground">Osservazioni satellitari:</span>
+                      <p className="font-medium">{summary.meta.observation_count}</p>
+                    </div>
+                  )}
+                  {summary.meta?.sensor_used && (
+                    <div>
+                      <span className="text-muted-foreground">Sensore utilizzato:</span>
+                      <p className="font-medium">{summary.meta.sensor_used}</p>
+                    </div>
+                  )}
+                  {summary.ndmi_data?.critical_threshold !== undefined && (
+                    <div>
+                      <span className="text-muted-foreground">Soglia critica NDMI:</span>
+                      <p className="font-medium">{summary.ndmi_data.critical_threshold.toFixed(2)}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
