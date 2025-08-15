@@ -17,7 +17,7 @@ import { analyzeTemporalTrends } from "@/lib/eosAnalysis";
 import { generateIntelligentAlerts, AlertsBundle } from "@/lib/intelligentAlerts";
 import { analyzeVegetationHealth } from "@/lib/vegetationHealth";
 import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { BarChart3, ArrowLeft, ThermometerSun, Droplets, Leaf, Activity, Download, AlertCircle } from "lucide-react";
+import { BarChart3, ArrowLeft, ThermometerSun, Droplets, Leaf, Activity, Download, AlertCircle, RefreshCw } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -61,6 +61,7 @@ const EOSOutput: React.FC = () => {
   const [usePermissiveFilters, setUsePermissiveFilters] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [showDemo, setShowDemo] = useState(false);
+  const [autoFallback, setAutoFallback] = useState(false);
 
   // Get optimal profile for UI display - Always call this hook
   const optimalProfile = useMemo(() => {
@@ -79,6 +80,7 @@ const EOSOutput: React.FC = () => {
       planting_date: userCfg.planting_date,
       start_date: userCfg.start_date,
       end_date: userCfg.end_date,
+      auto_fallback: autoFallback,
       // Only override parameters if using permissive filters manually
       ...(usePermissiveFilters ? {
         max_cloud_cover_in_aoi: 70,
@@ -88,7 +90,7 @@ const EOSOutput: React.FC = () => {
       // Otherwise let the optimization function handle it automatically
     };
     return cfg;
-  }, [userCfg, usePermissiveFilters]);
+  }, [userCfg, usePermissiveFilters, autoFallback]);
 
   // Always call this hook
   const productivity = useMemo(() => computeProductivity(userCfg?.cropType || "sunflower"), [userCfg?.cropType]);
@@ -446,20 +448,34 @@ const EOSOutput: React.FC = () => {
             <AlertDescription className="space-y-2">
               <p>Non sono state trovate osservazioni satellitari per questo campo nel periodo analizzato.</p>
               <div className="mt-2">
-                <p className="font-medium">Soluzioni suggerite:</p>
-                <ul className="list-disc list-inside text-sm mt-1 space-y-1">
-                  <li>Estendi il periodo di analisi (es. ultimi 3-6 mesi)</li>
-                  <li>Usa "Riprova con filtri estesi" per ridurre i filtri cloud</li>
-                  <li>Verifica che le coordinate del campo siano corrette</li>
-                </ul>
+                <p className="font-medium">Prova queste soluzioni:</p>
+                <div className="mt-3 flex flex-col gap-3">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={autoFallback}
+                      onChange={(e) => setAutoFallback(e.target.checked)}
+                      className="rounded border-gray-300"
+                    />
+                    <span className="text-sm">Fallback automatico se non trova dati (usa filtri più permissivi)</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => {
+                      setRefreshKey(k => k + 1);
+                    }}>
+                      <RefreshCw className="w-4 h-4 mr-1" />
+                      Riprova
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => {
+                      setUsePermissiveFilters(true);
+                      setShowDemo(false);
+                      setRefreshKey(k => k + 1);
+                    }}>
+                      Usa Filtri Estesi
+                    </Button>
+                  </div>
+                </div>
               </div>
-              <Button variant="outline" size="sm" onClick={() => {
-                setUsePermissiveFilters(true);
-                setShowDemo(false);
-                setRefreshKey(k => k + 1);
-              }} className="mt-2">
-                Riprova con Filtri Estesi
-              </Button>
             </AlertDescription>
           </Alert>
         )}

@@ -154,14 +154,15 @@ serve(async (req) => {
         period_days: Math.floor((new Date(ed).getTime() - new Date(sd).getTime()) / (1000 * 60 * 60 * 24))
       });
 
-      // Read optional filters from request (with EOS standard defaults)
+      // Read optional filters from request (with optimized defaults for maximum coverage)
       const maxCloud = typeof (body as any)?.max_cloud_cover_in_aoi === "number"
         ? Math.max(0, Math.min(100, (body as any).max_cloud_cover_in_aoi))
-        : 50; // EOS standard cloud filtering (50%)
+        : 90; // High cloud tolerance for maximum image availability
       const excludeCover = typeof (body as any)?.exclude_cover_pixels === "boolean"
         ? (body as any).exclude_cover_pixels
-        : false; // More permissive default
+        : true; // Exclude cloudy pixels for quality
       const cml = typeof (body as any)?.cloud_masking_level === "number" ? (body as any).cloud_masking_level : 1; // Moderate masking
+      const autoFallback = typeof (body as any)?.auto_fallback === "boolean" ? (body as any).auto_fallback : false;
 
       const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -239,27 +240,16 @@ serve(async (req) => {
       let ndmiMap = ndmiMap1;
 
       const initialDates = Array.from(new Set([...Object.keys(ndviMap1), ...Object.keys(ndmiMap1)]));
-      if (initialDates.length === 0) {
-        // Intelligent fallback with escalating permissiveness
+      if (initialDates.length === 0 && autoFallback) {
+        // Optional single fallback retry with most permissive settings
         fallback_used = true;
-        // First fallback: more permissive but still reasonable 
-        let tMaxCloud = Math.max(maxCloud * 1.4, 70); // 40% increase or minimum 70%
-        let tExclude = false;
-        let tCml = Math.max(0, cml - 1); // Reduce masking level
-        console.log("EOS stats empty, retrying with permissive filters", { tMaxCloud, tExclude, tCml });
+        const tMaxCloud = 90;
+        const tExclude = false; // Don't exclude any pixels
+        const tCml = 0; // No cloud masking
+        console.log("EOS stats empty, auto-fallback enabled, trying most permissive filters", { tMaxCloud, tExclude, tCml });
         
         ndviMap = await createAndFetchStats("NDVI", { maxCloud: tMaxCloud, excludeCover: tExclude, cml: tCml });
         ndmiMap = await createAndFetchStats("NDMI", { maxCloud: tMaxCloud, excludeCover: tExclude, cml: tCml });
-        
-        // If still no data, try very permissive settings
-        const fallbackDates = Array.from(new Set([...Object.keys(ndviMap), ...Object.keys(ndmiMap)]));
-        if (fallbackDates.length === 0) {
-          tMaxCloud = 70; // Very high cloud tolerance
-          tCml = 0; // No cloud masking
-          console.log("EOS stats still empty, trying very permissive filters", { tMaxCloud, tExclude, tCml });
-          ndviMap = await createAndFetchStats("NDVI", { maxCloud: tMaxCloud, excludeCover: tExclude, cml: tCml });
-          ndmiMap = await createAndFetchStats("NDMI", { maxCloud: tMaxCloud, excludeCover: tExclude, cml: tCml });
-        }
       }
 
       const allDates = Array.from(new Set([...Object.keys(ndviMap), ...Object.keys(ndmiMap)])).sort();
@@ -296,9 +286,9 @@ serve(async (req) => {
       };
 
       const used_filters = {
-        max_cloud_cover_in_aoi: series.length ? (fallback_used ? Math.max(maxCloud, 60) : maxCloud) : maxCloud,
-        exclude_cover_pixels: series.length ? (fallback_used ? false : excludeCover) : excludeCover,
-        cloud_masking_level: series.length ? (fallback_used ? 1 : cml) : cml,
+        max_cloud_cover_in_aoi: fallback_used ? 90 : maxCloud,
+        exclude_cover_pixels: fallback_used ? false : excludeCover,
+        cloud_masking_level: fallback_used ? 0 : cml,
       };
       const meta = {
         mode: "live",
@@ -562,10 +552,11 @@ serve(async (req) => {
       const sd = planting_date || providedStart || new Date(Date.now() - 60 * 24 * 3600 * 1000).toISOString().slice(0, 10);
       const ed = providedEnd || todayIso;
 
-      // Cloud filters with optimized defaults
-      const maxCloud = typeof (body as any)?.max_cloud_cover_in_aoi === "number" ? Math.max(0, Math.min(100, (body as any).max_cloud_cover_in_aoi)) : 15; // Italy summer optimized
-      const excludeCover = typeof (body as any)?.exclude_cover_pixels === "boolean" ? (body as any).exclude_cover_pixels : false; // More permissive default
+      // Cloud filters with optimized defaults for maximum coverage
+      const maxCloud = typeof (body as any)?.max_cloud_cover_in_aoi === "number" ? Math.max(0, Math.min(100, (body as any).max_cloud_cover_in_aoi)) : 90; // High cloud tolerance for maximum image availability
+      const excludeCover = typeof (body as any)?.exclude_cover_pixels === "boolean" ? (body as any).exclude_cover_pixels : true; // Exclude cloudy pixels for quality
       const cml = typeof (body as any)?.cloud_masking_level === "number" ? (body as any).cloud_masking_level : 1; // Moderate masking
+      const autoFallback = typeof (body as any)?.auto_fallback === "boolean" ? (body as any).auto_fallback : false;
 
       const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -633,15 +624,16 @@ serve(async (req) => {
         throw new Error("Statistics task timed out");
       };
 
-      // Fetch NDVI/NDMI with fallback
+      // Fetch NDVI/NDMI with optional auto-fallback
       let fallback_used = false;
       let ndviMap = await createAndFetchStats("NDVI", { maxCloud, excludeCover, cml });
       let ndmiMap = await createAndFetchStats("NDMI", { maxCloud, excludeCover, cml });
       const initialDates = Array.from(new Set([...Object.keys(ndviMap), ...Object.keys(ndmiMap)]));
-      if (initialDates.length === 0) {
+      if (initialDates.length === 0 && autoFallback) {
         fallback_used = true;
-        ndviMap = await createAndFetchStats("NDVI", { maxCloud: Math.max(maxCloud, 60), excludeCover: false, cml: 1 });
-        ndmiMap = await createAndFetchStats("NDMI", { maxCloud: Math.max(maxCloud, 60), excludeCover: false, cml: 1 });
+        console.log("EOS summary empty, auto-fallback enabled, trying most permissive filters");
+        ndviMap = await createAndFetchStats("NDVI", { maxCloud: 90, excludeCover: false, cml: 0 });
+        ndmiMap = await createAndFetchStats("NDMI", { maxCloud: 90, excludeCover: false, cml: 0 });
       }
       const allDates = Array.from(new Set([...Object.keys(ndviMap), ...Object.keys(ndmiMap)])).sort();
       const series = allDates.map((d) => ({ date: d, NDVI: Number(ndviMap[d] ?? 0), NDMI: Number(ndmiMap[d] ?? 0) }));
@@ -829,9 +821,9 @@ serve(async (req) => {
           observation_count: series.length,
           fallback_used,
           used_filters: {
-            max_cloud_cover_in_aoi: fallback_used ? Math.max(maxCloud, 60) : maxCloud,
+            max_cloud_cover_in_aoi: fallback_used ? 90 : maxCloud,
             exclude_cover_pixels: fallback_used ? false : excludeCover,
-            cloud_masking_level: fallback_used ? 1 : cml,
+            cloud_masking_level: fallback_used ? 0 : cml,
           },
         },
       };

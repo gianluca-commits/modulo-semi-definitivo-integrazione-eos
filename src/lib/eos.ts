@@ -22,6 +22,7 @@ export interface EosConfig {
   max_cloud_cover_in_aoi?: number; // 0-100
   exclude_cover_pixels?: boolean;   // exclude pixels flagged as cloudy
   cloud_masking_level?: 0 | 1 | 2;  // 0-none,1-basic,2-advanced
+  auto_fallback?: boolean;          // enable automatic fallback with permissive filters
   // Optional: location context for optimal parameter selection
   location?: { lat: number; lng: number; country?: string };
 }
