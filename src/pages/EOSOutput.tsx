@@ -1,4 +1,3 @@
-
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/components/ui/use-toast";
@@ -17,7 +16,6 @@ import { SoilMoistureAnalyticsCard } from "@/components/SoilMoistureAnalyticsCar
 import { analyzeTemporalTrends } from "@/lib/eosAnalysis";
 import { generateIntelligentAlerts, AlertsBundle } from "@/lib/intelligentAlerts";
 import { analyzeVegetationHealth } from "@/lib/vegetationHealth";
-
 import { LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { BarChart3, ArrowLeft, ThermometerSun, Droplets, Leaf, Activity, Download, AlertCircle } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -25,7 +23,6 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import GoogleMapsVisualization from "@/components/GoogleMapsVisualization";
 import { supabase } from "@/integrations/supabase/client";
-
 function setMetaTags(title: string, description: string, canonicalPath: string) {
   document.title = title;
   let meta = document.querySelector('meta[name="description"]');
@@ -44,7 +41,6 @@ function setMetaTags(title: string, description: string, canonicalPath: string) 
   const origin = window.location.origin;
   link.href = `${origin}${canonicalPath}`;
 }
-
 const EOSOutput: React.FC = () => {
   const navigate = useNavigate();
   const [polygon, setPolygon] = useState<PolygonData | null>(null);
@@ -96,33 +92,31 @@ const EOSOutput: React.FC = () => {
 
   // Always call this hook
   const productivity = useMemo(() => computeProductivity(userCfg?.cropType || "sunflower"), [userCfg?.cropType]);
-  
+
   // Always call this hook
   const demoTs = useMemo(() => demoVegetation().time_series, []);
 
   // Always call this hook
   const rawTs = useMemo(() => summary?.ndvi_series as any || [], [summary?.ndvi_series]);
-  
+
   // Always call this hook
   const noRealObs = useMemo(() => !rawTs.length || summary?.meta?.observation_count === 0, [rawTs.length, summary?.meta?.observation_count]);
-  
+
   // Always call this hook
   const isDemo = useMemo(() => showDemo || noRealObs, [showDemo, noRealObs]);
-  
+
   // Always call this hook
   const ts = useMemo(() => isDemo && showDemo ? demoTs : rawTs, [isDemo, showDemo, demoTs, rawTs]);
-  
+
   // Enhanced analysis for the new components - Always call these hooks
   const ndviAnalysis = useMemo(() => {
     if (!ts.length) return null;
     return analyzeTemporalTrends(ts, "NDVI", userCfg?.cropType || "sunflower");
   }, [ts, userCfg?.cropType]);
-  
   const ndmiAnalysis = useMemo(() => {
     if (!ts.length) return null;
     return analyzeTemporalTrends(ts, "NDMI", userCfg?.cropType || "sunflower");
   }, [ts, userCfg?.cropType]);
-
   useEffect(() => {
     setMetaTags("Risultati analisi | EOS Agritech", "KPI NDVI/NDMI, fenologia e rischi meteo per il tuo campo.", "/output");
     try {
@@ -165,7 +159,6 @@ const EOSOutput: React.FC = () => {
       navigate("/");
     }
   }, [navigate]);
-
   useEffect(() => {
     const run = async () => {
       if (!polygon || !eosConfig) return;
@@ -191,12 +184,7 @@ const EOSOutput: React.FC = () => {
         }
 
         // Generate intelligent alerts
-        const alerts = generateIntelligentAlerts(
-          sumRes, 
-          sumRes.ndvi_series || [], 
-          eosConfig.cropType,
-          250
-        );
+        const alerts = generateIntelligentAlerts(sumRes, sumRes.ndvi_series || [], eosConfig.cropType, 250);
         setAlertsBundle(alerts);
         // Persist last successful result for offline/fallback exports (only real observations, no fallback)
         try {
@@ -237,9 +225,7 @@ const EOSOutput: React.FC = () => {
     };
     run();
   }, [polygon, eosConfig, refreshKey, savedBundle, userCfg]);
-
   const fileSafe = (s: string) => (s || "").replace(/[^a-z0-9-_]+/gi, "_").toLowerCase();
-  
   const handleExportJSON = () => {
     if (!summary) {
       toast({
@@ -264,7 +250,6 @@ const EOSOutput: React.FC = () => {
     a.click();
     URL.revokeObjectURL(a.href);
   };
-  
   const handleExportCSV = () => {
     if (!ts.length || isDemo) {
       toast({
@@ -285,13 +270,10 @@ const EOSOutput: React.FC = () => {
     a.click();
     URL.revokeObjectURL(a.href);
   };
-  
   const handlePrint = () => {
     window.print();
   };
-
   if (!polygon || !userCfg) return null;
-
   return <main className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
         <div className="max-w-6xl mx-auto px-4 py-6 flex items-center justify-between">
@@ -344,33 +326,13 @@ const EOSOutput: React.FC = () => {
           </Card>
           
           {/* EOS Parameter Display */}
-          <EosParameterDisplay 
-            summary={summary} 
-            optimizationProfile={optimalProfile?.description}
-          />
+          <EosParameterDisplay summary={summary} optimizationProfile={optimalProfile?.description} />
         </div>
 
         {/* Polygon Visualization */}
         {polygon && <GoogleMapsVisualization polygon={polygon} title="Campo Analizzato" description={`${polygon.source} • ${userCfg.cropType} • ${polygon.area_ha} ha`} />}
 
-        {(usingSaved || noRealObs) && <Alert variant={usingSaved ? "default" : "destructive"}>
-            <AlertTitle>{usingSaved ? "Stai visualizzando l'ultimo risultato salvato" : "Nessun risultato trovato nel periodo"}</AlertTitle>
-            <AlertDescription>
-              {usingSaved ? "Non sono arrivati dati nuovi. Puoi riprovare ora o esportare i dati salvati." : "Prova ad allargare l'intervallo o a usare filtri più permissivi."}
-            </AlertDescription>
-            <div className="mt-3 flex gap-2">
-              <Button size="sm" variant="secondary" onClick={() => {
-            setUsePermissiveFilters(false);
-            setShowDemo(false);
-            setRefreshKey(k => k + 1);
-          }}>Riprova</Button>
-              <Button size="sm" onClick={() => {
-            setUsePermissiveFilters(true);
-            setShowDemo(false);
-            setRefreshKey(k => k + 1);
-          }}>Riprova con filtri estesi</Button>
-            </div>
-          </Alert>}
+        {usingSaved || noRealObs}
 
         {summary?.meta?.observation_count === 0 && <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
@@ -412,65 +374,32 @@ const EOSOutput: React.FC = () => {
 
         <article className="lg:col-span-2 space-y-6">
           {/* Intelligent Alerts */}
-          {alertsBundle && (
-            <IntelligentAlertsCard alertsBundle={alertsBundle} />
-          )}
+          {alertsBundle && <IntelligentAlertsCard alertsBundle={alertsBundle} />}
 
           {/* Enhanced KPI cards with Yield Prediction */}
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {summary?.ndvi_data.current_value != null && (
-              <HealthStatusCard
-                ndvi={summary.ndvi_data.current_value}
-                trend={summary.ndvi_data.trend_30_days}
-                cropType={userCfg?.cropType || "sunflower"}
-                temporalAnalysis={ndviAnalysis}
-                isDemo={isDemo}
-              />
-            )}
+            {summary?.ndvi_data.current_value != null && <HealthStatusCard ndvi={summary.ndvi_data.current_value} trend={summary.ndvi_data.trend_30_days} cropType={userCfg?.cropType || "sunflower"} temporalAnalysis={ndviAnalysis} isDemo={isDemo} />}
             
-            {summary?.ndmi_data.current_value != null && summary && (
-              <WaterStressAlert
-                ndmi={summary.ndmi_data.current_value}
-                trend={summary.ndmi_data.trend_14_days}
-                cropType={userCfg?.cropType || "sunflower"}
-                summary={summary}
-                temporalAnalysis={ndmiAnalysis}
-                onIrrigationPlan={() => {
-                  // TODO: Implement irrigation planning modal
-                  console.log("Planning irrigation...");
-                }}
-              />
-            )}
+            {summary?.ndmi_data.current_value != null && summary && <WaterStressAlert ndmi={summary.ndmi_data.current_value} trend={summary.ndmi_data.trend_14_days} cropType={userCfg?.cropType || "sunflower"} summary={summary} temporalAnalysis={ndmiAnalysis} onIrrigationPlan={() => {
+              // TODO: Implement irrigation planning modal
+              console.log("Planning irrigation...");
+            }} />}
 
             {/* Vegetation Health Analysis Card */}
-            {isLoadingHealth ? (
-              <Card className="w-full">
+            {isLoadingHealth ? <Card className="w-full">
                 <CardContent className="p-6">
                   <div className="flex items-center justify-center h-32">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                   </div>
                 </CardContent>
-              </Card>
-            ) : vegetationHealth ? (
-              <VegetationHealthCard 
-                analysis={vegetationHealth}
-                cropType={userCfg?.cropType || "sunflower"}
-              />
-            ) : summary ? (
-              <VegetationHealthCard 
-                analysis={analyzeVegetationHealth(summary, userCfg?.cropType || "sunflower", summary?.ndvi_series || [])}
-                cropType={userCfg?.cropType || "sunflower"}
-              />
-            ) : (
-              <Card className="w-full">
+              </Card> : vegetationHealth ? <VegetationHealthCard analysis={vegetationHealth} cropType={userCfg?.cropType || "sunflower"} /> : summary ? <VegetationHealthCard analysis={analyzeVegetationHealth(summary, userCfg?.cropType || "sunflower", summary?.ndvi_series || [])} cropType={userCfg?.cropType || "sunflower"} /> : <Card className="w-full">
                 <CardContent className="p-6">
                   <div className="text-center text-muted-foreground">
                     <p>Analisi salute vegetazione non disponibile</p>
                     <p className="text-sm mt-2">Riprova più tardi</p>
                   </div>
                 </CardContent>
-              </Card>
-            )}
+              </Card>}
             <Card className="border border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-foreground"><Activity className="w-4 h-4" /> Fenologia</CardTitle>
@@ -511,61 +440,35 @@ const EOSOutput: React.FC = () => {
           </div>
 
           {/* Soil Moisture Analytics */}
-          {summary?.soil_moisture && (
-            <div className="space-y-4">
+          {summary?.soil_moisture && <div className="space-y-4">
               <h2 className="text-2xl font-semibold text-primary">Analisi Umidità Suolo</h2>
-              <SoilMoistureAnalyticsCard 
-                soilMoisture={summary.soil_moisture}
-                cropType={userCfg?.cropType || "sunflower"}
-                onIrrigationPlan={() => {
-                  // TODO: Implement irrigation planning modal
-                  console.log("Planning irrigation from soil moisture...");
-                }}
-              />
-            </div>
-          )}
+              <SoilMoistureAnalyticsCard soilMoisture={summary.soil_moisture} cropType={userCfg?.cropType || "sunflower"} onIrrigationPlan={() => {
+              // TODO: Implement irrigation planning modal
+              console.log("Planning irrigation from soil moisture...");
+            }} />
+            </div>}
 
           {/* Nitrogen Analysis */}
-          {ts?.length > 0 && ts[ts.length - 1]?.ReCI && (
-            <NitrogenAnalysisCard
-              reci={ts[ts.length - 1].ReCI}
-              previousReci={ts[ts.length - 2]?.ReCI}
-              cropType={userCfg?.cropType || "sunflower"}
-              expectedYield={5} // Default value since we removed yield prediction
-              marketPrice={250}
-            />
-          )}
+          {ts?.length > 0 && ts[ts.length - 1]?.ReCI && <NitrogenAnalysisCard reci={ts[ts.length - 1].ReCI} previousReci={ts[ts.length - 2]?.ReCI} cropType={userCfg?.cropType || "sunflower"} expectedYield={5} // Default value since we removed yield prediction
+          marketPrice={250} />}
 
           {/* Weather Analytics Section */}
-          {summary?.weather && (
-            <div className="space-y-4">
+          {summary?.weather && <div className="space-y-4">
               <h2 className="text-2xl font-semibold text-primary">Analisi Meteorologica Avanzata</h2>
-              <WeatherAnalyticsCard 
-                weather={summary.weather}
-                cropType={eosConfig.cropType}
-              />
-            </div>
-          )}
+              <WeatherAnalyticsCard weather={summary.weather} cropType={eosConfig.cropType} />
+            </div>}
 
           {/* Enhanced NDVI Chart */}
-          {ts?.length > 0 && (
-            <AdvancedNDVIChart
-              timeSeries={ts}
-              cropType={userCfg?.cropType || "sunflower"}
-              isDemo={isDemo}
-            />
-          )}
+          {ts?.length > 0 && <AdvancedNDVIChart timeSeries={ts} cropType={userCfg?.cropType || "sunflower"} isDemo={isDemo} />}
           
-          {!ts?.length && (
-            <Card>
+          {!ts?.length && <Card>
               <CardContent className="h-32 flex flex-col items-center justify-center text-muted-foreground space-y-2">
                 <p>Nessun dato disponibile per il grafico</p>
                 <Button size="sm" variant="secondary" onClick={() => setShowDemo(true)}>
                   Mostra dati di esempio
                 </Button>
               </CardContent>
-            </Card>
-          )}
+            </Card>}
 
           {/* Productivity */}
           
@@ -576,5 +479,4 @@ const EOSOutput: React.FC = () => {
       {loading && <div className="max-w-6xl mx-auto px-4 pb-8 text-sm text-muted-foreground">Caricamento in corso…</div>}
     </main>;
 };
-
 export default EOSOutput;
