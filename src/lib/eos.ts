@@ -580,6 +580,17 @@ export async function getEosSummary(
   // Apply optimal parameters based on location and season
   const optimizedConfig = applyEosParametersWithFallback(dynamicConfig, _polygon);
   
+  console.info('EOS Debug - getEosSummary called with config:', {
+    crop: optimizedConfig.cropType,
+    period: `${optimizedConfig.start_date} → ${optimizedConfig.end_date}`,
+    auto_fallback: optimizedConfig.auto_fallback,
+    filters: {
+      cloud_cover: optimizedConfig.max_cloud_cover_in_aoi,
+      exclude_cover: optimizedConfig.exclude_cover_pixels,
+      masking_level: optimizedConfig.cloud_masking_level
+    }
+  });
+  
   console.log('EOS Debug - Optimized config with dynamic dates:', {
     start_date: optimizedConfig.start_date,
     end_date: optimizedConfig.end_date,
@@ -643,6 +654,22 @@ export async function getEosSummary(
           data.meta.escalation_level = attempt === 2 ? "permissive" : "very_permissive";
         }
       }
+
+      const observationCount = data.meta?.observation_count || 0;
+      console.info("EOS Debug - Summary response received:", {
+        observation_count: observationCount,
+        ndvi_series_length: data.ndvi_series?.length || 0,
+        fallback_used: data.meta?.fallback_used || false,
+        attempt_number: attempt,
+        escalation_used: useEscalation,
+        period: `${optimizedConfig.start_date} → ${optimizedConfig.end_date}`
+      });
+
+      // Auto-enable fallback for next time if no observations found
+      if (observationCount === 0 && !optimizedConfig.auto_fallback) {
+        console.info("EOS Debug - No observations found, consider enabling auto_fallback for better results");
+      }
+
       return data as EosSummary;
     }
     

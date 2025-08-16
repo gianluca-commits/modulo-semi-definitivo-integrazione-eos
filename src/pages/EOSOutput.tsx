@@ -3,8 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { EosSummary, computeProductivity, getEosSummary, demoVegetation, type PolygonData, type EosConfig, getOptimalEosParameters } from "@/lib/eos";
+import { EosSummary, computeProductivity, getEosSummary, getWeatherSummary, demoVegetation, demoWeather, type PolygonData, type EosConfig, type WeatherData, getOptimalEosParameters } from "@/lib/eos";
 import { EosParameterDisplay } from "@/components/EosParameterDisplay";
+import { EosDataStatusCard } from "@/components/EosDataStatusCard";
 import { HealthStatusCard } from "@/components/HealthStatusCard";
 import { WaterStressAlert } from "@/components/WaterStressAlert";
 import { AdvancedNDVIChart } from "@/components/AdvancedNDVIChart";
@@ -47,6 +48,7 @@ const EOSOutput: React.FC = () => {
   const [userCfg, setUserCfg] = useState<any>(null);
   
   const [summary, setSummary] = useState<EosSummary | null>(null);
+  const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [vegetationHealth, setVegetationHealth] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [isLoadingHealth, setIsLoadingHealth] = useState(false);
@@ -152,10 +154,27 @@ const EOSOutput: React.FC = () => {
       if (!polygon || !eosConfig) return;
       setLoading(true);
       try {
-        const sumRes = await getEosSummary(polygon, eosConfig);
+        // Fetch both summary and weather data in parallel
+        const [sumRes, weatherRes] = await Promise.all([
+          getEosSummary(polygon, eosConfig),
+          getWeatherSummary(polygon, eosConfig)
+        ]);
+        
         setSummary(sumRes);
+        setWeatherData(weatherRes);
         setUsingSaved(false);
         setShowDemo(false);
+
+        // Auto-suggest fallback if no observations
+        const observationCount = sumRes.meta?.observation_count || 0;
+        if (observationCount === 0 && !autoFallback) {
+          console.info("EOS Debug - Suggesting auto-fallback for better data coverage");
+          toast({
+            title: "Nessun dato satellitare",
+            description: "Considera di attivare 'Fallback automatico' per parametri più permissivi",
+            variant: "default",
+          });
+        }
 
         // Analyze vegetation health using EOS data
         setIsLoadingHealth(true);
@@ -467,6 +486,69 @@ const EOSOutput: React.FC = () => {
         )}
 
         <div className="space-y-6">
+          {/* EOS Status and Parameter Display */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <EosDataStatusCard 
+              summary={summary} 
+              isDemo={showDemo}
+              requestedPeriod={userCfg ? {
+                start_date: userCfg.start_date,
+                end_date: userCfg.end_date
+              } : undefined}
+            />
+            
+            <EosParameterDisplay 
+              summary={summary} 
+              optimizationProfile={optimalProfile?.description}
+            />
+            
+            {/* User Configuration Card */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-primary" />
+                  Configurazione Utente
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Coltura:</span>
+                    <Badge variant="outline" className="text-xs">
+                      {userCfg?.cropType === "wheat" ? "Grano" :
+                       userCfg?.cropType === "sunflower" ? "Girasole" :
+                       userCfg?.cropType === "wine" ? "Vite" :
+                       userCfg?.cropType === "olive" ? "Olivo" :
+                       userCfg?.cropType || "Non specificato"}
+                    </Badge>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Semina:</span>
+                    <span className="font-mono">{userCfg?.planting_date || "Non specificata"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Periodo analisi:</span>
+                    <span className="font-mono">
+                      {userCfg?.start_date} → {userCfg?.end_date}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Filtri permissivi:</span>
+                    <Badge variant={usePermissiveFilters ? "default" : "outline"} className="text-xs">
+                      {usePermissiveFilters ? "Attivi" : "Standard"}
+                    </Badge>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Fallback automatico:</span>
+                    <Badge variant={autoFallback ? "default" : "outline"} className="text-xs">
+                      {autoFallback ? "Attivo" : "Disattivo"}
+                    </Badge>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
           {/* Intelligent Alerts */}
           {alertsBundle && <IntelligentAlertsCard alertsBundle={alertsBundle} />}
 
@@ -547,10 +629,15 @@ const EOSOutput: React.FC = () => {
           marketPrice={250} />}
 
           {/* Weather Analytics Section */}
-          {summary?.weather && <div className="space-y-4">
+          {(weatherData || showDemo) && (
+            <div className="space-y-4">
               <h2 className="text-2xl font-semibold text-primary">Analisi Meteorologica Avanzata</h2>
-              <WeatherAnalyticsCard weather={summary.weather} cropType={eosConfig.cropType} />
-            </div>}
+              <WeatherAnalyticsCard 
+                weather={weatherData || demoWeather()} 
+                cropType={userCfg?.cropType || "sunflower"} 
+              />
+            </div>
+          )}
 
           {/* Enhanced NDVI Chart */}
           {ts?.length > 0 && <AdvancedNDVIChart timeSeries={ts} cropType={userCfg?.cropType || "sunflower"} isDemo={isDemo} />}
