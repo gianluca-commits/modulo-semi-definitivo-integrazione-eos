@@ -105,7 +105,12 @@ export interface VegetationData {
       max_cloud_cover_in_aoi?: number;
       exclude_cover_pixels?: boolean;
       cloud_masking_level?: number;
+      sensors?: string[];
+      aoi_cover_share_min?: number;
     };
+    error_code?: string;
+    provider_status?: number;
+    retry_after?: number;
   };
 }
 
@@ -372,45 +377,106 @@ export async function getVegetationTimeSeries(
     return demoVegetation();
   }
 
-  // Live mode via Supabase Edge Function proxy
-  const { data, error } = await supabase.functions.invoke("eos-proxy", {
-    body: {
-      action: "vegetation",
-      polygon: _polygon,
-      start_date: config.start_date,
-      end_date: config.end_date,
-      max_cloud_cover_in_aoi: config.max_cloud_cover_in_aoi,
-      exclude_cover_pixels: config.exclude_cover_pixels,
-      cloud_masking_level: config.cloud_masking_level,
-    },
-  });
+  let attempts = 0;
+  const maxAttempts = 3;
 
-  if (error) {
-    console.error("eos-proxy vegetation error:", error);
-    // Return empty result instead of demo
-    return {
-      field_id: "UNKNOWN",
-      satellite: "",
-      time_series: [],
-      analysis: { health_status: "unknown", growth_stage: "unknown" },
-      meta: { reason: "error", observation_count: 0, fallback_used: false },
-    };
+  while (attempts < maxAttempts) {
+    attempts++;
+    
+    try {
+      // Live mode via Supabase Edge Function proxy
+      const { data, error } = await supabase.functions.invoke("eos-proxy", {
+        body: {
+          action: "vegetation",
+          polygon: _polygon,
+          start_date: config.start_date,
+          end_date: config.end_date,
+          max_cloud_cover_in_aoi: config.max_cloud_cover_in_aoi,
+          exclude_cover_pixels: config.exclude_cover_pixels,
+          cloud_masking_level: config.cloud_masking_level,
+          auto_fallback: config.auto_fallback,
+        },
+      });
+
+      if (error) {
+        console.error("eos-proxy vegetation error:", error);
+        
+        // Check for rate limiting
+        if (error.message?.includes("429") || error.context?.status === 429) {
+          const retryAfter = error.context?.retry_after || (attempts * 5);
+          console.log(`Rate limited (attempt ${attempts}/${maxAttempts}), retrying in ${retryAfter}s...`);
+          
+          if (attempts < maxAttempts) {
+            await new Promise(r => setTimeout(r, retryAfter * 1000));
+            continue;
+          }
+        }
+        
+        // Return structured error result
+        return {
+          field_id: "UNKNOWN",
+          satellite: "",
+          time_series: [],
+          analysis: { health_status: "unknown", growth_stage: "unknown" },
+          meta: { 
+            reason: "error", 
+            observation_count: 0, 
+            fallback_used: false,
+            error_code: error.context?.error_code || "UNKNOWN_ERROR",
+            provider_status: error.context?.provider_status || null,
+            retry_after: error.context?.retry_after || null
+          },
+        };
+      }
+      
+      if (!data || !("vegetation" in data)) {
+        console.warn("eos-proxy vegetation invalid response", data);
+        return {
+          field_id: "UNKNOWN",
+          satellite: "",
+          time_series: [],
+          analysis: { health_status: "unknown", growth_stage: "unknown" },
+          meta: { reason: "invalid_response", observation_count: 0, fallback_used: false },
+        };
+      }
+      
+      const veg = data.vegetation as VegetationData;
+      if ((data as any).meta) {
+        (veg as any).meta = (data as any).meta;
+      }
+      return veg;
+      
+    } catch (fetchError: any) {
+      console.error(`Vegetation fetch attempt ${attempts} failed:`, fetchError);
+      
+      if (attempts >= maxAttempts) {
+        return {
+          field_id: "UNKNOWN",
+          satellite: "",
+          time_series: [],
+          analysis: { health_status: "unknown", growth_stage: "unknown" },
+          meta: { 
+            reason: "network_error", 
+            observation_count: 0, 
+            fallback_used: false,
+            error_code: "NETWORK_ERROR"
+          },
+        };
+      }
+      
+      // Exponential backoff
+      await new Promise(r => setTimeout(r, Math.pow(2, attempts) * 1000));
+    }
   }
-  if (!data || !("vegetation" in data)) {
-    console.warn("eos-proxy vegetation invalid response", data);
-    return {
-      field_id: "UNKNOWN",
-      satellite: "",
-      time_series: [],
-      analysis: { health_status: "unknown", growth_stage: "unknown" },
-      meta: { reason: "invalid_response", observation_count: 0, fallback_used: false },
-    };
-  }
-  const veg = data.vegetation as VegetationData;
-  if ((data as any).meta) {
-    (veg as any).meta = (data as any).meta;
-  }
-  return veg;
+
+  // Fallback return
+  return {
+    field_id: "UNKNOWN",
+    satellite: "",
+    time_series: [],
+    analysis: { health_status: "unknown", growth_stage: "unknown" },
+    meta: { reason: "max_attempts_exceeded", observation_count: 0, fallback_used: false },
+  };
 }
 
 export async function getWeatherSummary(
@@ -422,26 +488,62 @@ export async function getWeatherSummary(
     return demoWeather();
   }
 
-  // Live mode via Supabase Edge Function proxy
-  const { data, error } = await supabase.functions.invoke("eos-proxy", {
-    body: {
-      action: "weather",
-      polygon: _polygon,
-      start_date: config.start_date,
-      end_date: config.end_date,
-    },
-  });
+  let attempts = 0;
+  const maxAttempts = 3;
 
-  if (error) {
-    console.error("eos-proxy weather error:", error);
-    return demoWeather();
-  }
-  if (!data || !("weather" in data)) {
-    console.warn("eos-proxy weather invalid response", data);
-    return demoWeather();
+  while (attempts < maxAttempts) {
+    attempts++;
+    
+    try {
+      // Live mode via Supabase Edge Function proxy
+      const { data, error } = await supabase.functions.invoke("eos-proxy", {
+        body: {
+          action: "weather",
+          polygon: _polygon,
+          start_date: config.start_date,
+          end_date: config.end_date,
+        },
+      });
+
+      if (error) {
+        console.error("eos-proxy weather error:", error);
+        
+        // Check for rate limiting with retry
+        if (error.message?.includes("429") || error.context?.status === 429) {
+          const retryAfter = error.context?.retry_after || (attempts * 3);
+          console.log(`Weather API rate limited (attempt ${attempts}/${maxAttempts}), retrying in ${retryAfter}s...`);
+          
+          if (attempts < maxAttempts) {
+            await new Promise(r => setTimeout(r, retryAfter * 1000));
+            continue;
+          }
+        }
+        
+        // Fallback to demo on final attempt or non-retryable error
+        return demoWeather();
+      }
+      
+      if (!data || !("weather" in data)) {
+        console.warn("eos-proxy weather invalid response", data);
+        if (attempts >= maxAttempts) return demoWeather();
+        continue;
+      }
+
+      return data.weather as WeatherData;
+      
+    } catch (fetchError: any) {
+      console.error(`Weather fetch attempt ${attempts} failed:`, fetchError);
+      
+      if (attempts >= maxAttempts) {
+        return demoWeather();
+      }
+      
+      // Exponential backoff
+      await new Promise(r => setTimeout(r, Math.pow(2, attempts) * 1000));
+    }
   }
 
-  return data.weather as WeatherData;
+  return demoWeather();
 }
 
 // Unified summary payload from edge function
@@ -493,6 +595,8 @@ export interface EosSummary {
       max_cloud_cover_in_aoi?: number;
       exclude_cover_pixels?: boolean;
       cloud_masking_level?: number;
+      sensors?: string[];
+      aoi_cover_share_min?: number;
     };
     // Optimization metadata
     optimization_used?: boolean;
@@ -501,6 +605,10 @@ export interface EosSummary {
     escalation_level?: string;
     all_attempts_failed?: boolean;
     suggestions?: string[];
+    // Error handling metadata
+    error_code?: string;
+    provider_status?: number;
+    retry_after?: number;
   };
 }
 

@@ -89,14 +89,22 @@ serve(async (req) => {
     const eosStatsBearer = Deno.env.get("EOS_STATISTICS_BEARER");
 
     if (!action) {
-      return new Response(JSON.stringify({ error: "Missing 'action'" }), {
+      return new Response(JSON.stringify({ 
+        error: "Missing 'action'",
+        error_code: "MISSING_ACTION",
+        provider_status: null
+      }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     if (!polygon || (!polygon.geojson && !polygon.coordinates)) {
-      return new Response(JSON.stringify({ error: "Invalid polygon" }), {
+      return new Response(JSON.stringify({ 
+        error: "Invalid polygon",
+        error_code: "INVALID_POLYGON", 
+        provider_status: null
+      }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -111,7 +119,11 @@ serve(async (req) => {
       const apiKey = Deno.env.get("EOS_DATA_API_KEY") || Deno.env.get("EOS_STATISTICS_BEARER");
       if (!apiKey) {
         return new Response(
-          JSON.stringify({ error: "Missing EOS API key. Please set EOS_DATA_API_KEY in Supabase secrets." }),
+          JSON.stringify({ 
+            error: "Missing EOS API key. Please set EOS_DATA_API_KEY in Supabase secrets.",
+            error_code: "MISSING_API_KEY",
+            provider_status: null
+          }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -166,98 +178,173 @@ serve(async (req) => {
 
       const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-      // Create statistics task and poll until finished; returns map of date->average
-      const createAndFetchStats = async (
-        indexName: string,
+      // Enhanced multi-index statistics with better error handling
+      const createAndFetchMultiStats = async (
+        indices: string[],
         filters: { maxCloud: number; excludeCover: boolean; cml: number }
-      ): Promise<Record<string, number>> => {
+      ): Promise<Record<string, Record<string, number>>> => {
         const createUrl = `https://api-connect.eos.com/api/gdw/api?api_key=${apiKey}`;
         const bodyPayload = {
           type: "mt_stats",
           params: {
-            bm_type: [indexName],
+            bm_type: indices,
             date_start: sd,
             date_end: ed,
             geometry,
-            reference: `lov-${Date.now()}-${indexName}`,
+            reference: `lov-${Date.now()}-multi`,
             sensors: ["sentinel2l2a"],
             max_cloud_cover_in_aoi: filters.maxCloud,
             exclude_cover_pixels: filters.excludeCover,
             cloud_masking_level: filters.cml,
+            aoi_cover_share_min: 0.1, // Ensure at least 10% AOI coverage
           },
         } as const;
+
+        console.log("EOS Debug - Creating multi-stats task with filters:", filters);
 
         const createResp = await fetch(createUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(bodyPayload),
         });
+        
         if (!createResp.ok) {
           const msg = await createResp.text();
-          throw new Error(`Stats task create failed: ${createResp.status} ${msg}`);
+          const errorResponse = {
+            error: `Stats task create failed: ${createResp.status} ${msg}`,
+            error_code: "EOS_CREATE_FAILED",
+            provider_status: createResp.status
+          };
+          
+          if (createResp.status === 429) {
+            const retryAfter = createResp.headers.get('Retry-After');
+            errorResponse.error_code = "RATE_LIMITED";
+            if (retryAfter) {
+              console.log(`EOS Rate limited - Retry-After: ${retryAfter}s`);
+              (errorResponse as any).retry_after = parseInt(retryAfter);
+            }
+          }
+          
+          throw errorResponse;
         }
         const createJson = await createResp.json();
         const taskId = createJson?.task_id as string;
-        if (!taskId) throw new Error("No task_id from statistics create");
+        if (!taskId) {
+          throw {
+            error: "No task_id from statistics create",
+            error_code: "NO_TASK_ID",
+            provider_status: 200
+          };
+        }
 
         const statusUrl = `https://api-connect.eos.com/api/gdw/api/${taskId}?api_key=${apiKey}`;
         let attempts = 0;
-          while (attempts < 20) { // Increased max attempts for better reliability
-            attempts++;
+        const maxAttempts = 25; // Increased for better reliability
+        
+        while (attempts < maxAttempts) {
+          attempts++;
+          
+          try {
             const st = await fetch(statusUrl);
+            
             if (!st.ok) {
               const t = await st.text();
+              
               if (st.status === 429 || t.includes("limit")) {
-                // Increased backoff for rate limiting
-                const backoffTime = Math.min(15000, 5000 + attempts * 2000); // 5s to 15s escalating
-                console.error(`Stats status 429 - backing off ${backoffTime}ms (attempt ${attempts})`);
+                const retryAfter = st.headers.get('Retry-After');
+                const backoffTime = retryAfter 
+                  ? Math.min(30000, parseInt(retryAfter) * 1000)
+                  : Math.min(20000, 3000 + attempts * 1500 + Math.random() * 2000); // Jitter
+                
+                console.log(`EOS Rate limited on status check - attempt ${attempts}/${maxAttempts}, backing off ${backoffTime}ms`);
                 await sleep(backoffTime);
                 continue;
               }
-              throw new Error(`Stats status failed: ${st.status} ${t}`);
+              
+              throw {
+                error: `Stats status failed: ${st.status} ${t}`,
+                error_code: "EOS_STATUS_FAILED",
+                provider_status: st.status
+              };
             }
+            
             const stJson = await st.json();
             if (stJson?.result && Array.isArray(stJson.result)) {
-              const map: Record<string, number> = {};
+              // Parse results by index type for multi-index response
+              const resultMap: Record<string, Record<string, number>> = {};
+              
               for (const r of stJson.result) {
-                if (r?.date && (typeof r.average === "number" || typeof r.average === "string")) {
-                  map[r.date] = Number(r.average);
+                if (r?.date && r?.bm_type && (typeof r.average === "number" || typeof r.average === "string")) {
+                  const indexType = r.bm_type;
+                  if (!resultMap[indexType]) resultMap[indexType] = {};
+                  resultMap[indexType][r.date] = Number(r.average);
                 }
               }
-              return map;
+              
+              return resultMap;
             }
-            await sleep(10000); // Slower polling to better respect rate limits
+            
+            // Task still processing
+            const pollingDelay = Math.min(12000, 8000 + attempts * 500); // Gradual increase
+            await sleep(pollingDelay);
+            
+          } catch (fetchError: any) {
+            if (attempts >= maxAttempts) throw fetchError;
+            
+            console.warn(`Fetch error on attempt ${attempts}, retrying:`, fetchError?.message);
+            await sleep(5000);
           }
-        throw new Error("Statistics task timed out");
+        }
+        
+        throw {
+          error: "Statistics task timed out after maximum attempts",
+          error_code: "TASK_TIMEOUT",
+          provider_status: null
+        };
       };
 
-      // First attempt with requested/default filters
+      // Enhanced multi-index request with RECI
       let fallback_used = false;
-      const ndviMap1 = await createAndFetchStats("NDVI", { maxCloud, excludeCover, cml });
-      const ndmiMap1 = await createAndFetchStats("NDMI", { maxCloud, excludeCover, cml });
-
-      let ndviMap = ndviMap1;
-      let ndmiMap = ndmiMap1;
-
-      const initialDates = Array.from(new Set([...Object.keys(ndviMap1), ...Object.keys(ndmiMap1)]));
-      if (initialDates.length === 0 && autoFallback) {
-        // Optional single fallback retry with most permissive settings
-        fallback_used = true;
-        const tMaxCloud = 90;
-        const tExclude = false; // Don't exclude any pixels
-        const tCml = 0; // No cloud masking
-        console.log("EOS stats empty, auto-fallback enabled, trying most permissive filters", { tMaxCloud, tExclude, tCml });
+      let finalFilters = { maxCloud, excludeCover, cml };
+      
+      try {
+        // Single consolidated request for NDVI, NDMI, and RECI
+        const multiResult = await createAndFetchMultiStats(["NDVI", "NDMI", "RECI"], finalFilters);
         
-        ndviMap = await createAndFetchStats("NDVI", { maxCloud: tMaxCloud, excludeCover: tExclude, cml: tCml });
-        ndmiMap = await createAndFetchStats("NDMI", { maxCloud: tMaxCloud, excludeCover: tExclude, cml: tCml });
-      }
+        let ndviMap = multiResult.NDVI || {};
+        let ndmiMap = multiResult.NDMI || {};
+        let reciMap = multiResult.RECI || {};
+        
+        const initialDates = Array.from(new Set([
+          ...Object.keys(ndviMap), 
+          ...Object.keys(ndmiMap),
+          ...Object.keys(reciMap)
+        ]));
+        
+        if (initialDates.length === 0 && autoFallback) {
+          // Fallback with more permissive settings
+          fallback_used = true;
+          finalFilters = { maxCloud: 90, excludeCover: false, cml: 0 };
+          console.log("EOS multi-stats empty, auto-fallback enabled, trying permissive filters:", finalFilters);
+          
+          const fallbackResult = await createAndFetchMultiStats(["NDVI", "NDMI", "RECI"], finalFilters);
+          ndviMap = fallbackResult.NDVI || {};
+          ndmiMap = fallbackResult.NDMI || {};
+          reciMap = fallbackResult.RECI || {};
+        }
 
-      const allDates = Array.from(new Set([...Object.keys(ndviMap), ...Object.keys(ndmiMap)])).sort();
-      const series = allDates.map((d) => ({
-        date: d,
-        NDVI: Number(ndviMap[d] ?? 0),
-        NDMI: Number(ndmiMap[d] ?? 0),
-      }));
+        const allDates = Array.from(new Set([
+          ...Object.keys(ndviMap), 
+          ...Object.keys(ndmiMap),
+          ...Object.keys(reciMap)
+        ])).sort();
+        
+        const series = allDates.map((d) => ({
+          date: d,
+          NDVI: Number(ndviMap[d] ?? 0),
+          NDMI: Number(ndmiMap[d] ?? 0),
+          ReCI: Number(reciMap[d] ?? 0),
+        }));
 
       // Phenology estimation from NDVI trend
       const ndvis = series.map((p) => p.NDVI);
@@ -285,34 +372,74 @@ serve(async (req) => {
         analysis: { health_status, growth_stage },
       };
 
-      const used_filters = {
-        max_cloud_cover_in_aoi: fallback_used ? 90 : maxCloud,
-        exclude_cover_pixels: fallback_used ? false : excludeCover,
-        cloud_masking_level: fallback_used ? 0 : cml,
-      };
-      const meta = {
-        mode: "live",
-        start_date: sd,
-        end_date: ed,
-        observation_count: series.length,
-        fallback_used,
-        used_filters,
-        reason: series.length === 0 ? "no_observations" : undefined,
-      };
+        const used_filters = {
+          max_cloud_cover_in_aoi: finalFilters.maxCloud,
+          exclude_cover_pixels: finalFilters.excludeCover,
+          cloud_masking_level: finalFilters.cml,
+          sensors: ["sentinel2l2a"],
+          aoi_cover_share_min: 0.1
+        };
+        
+        const meta = {
+          mode: "live",
+          start_date: sd,
+          end_date: ed,
+          observation_count: series.length,
+          fallback_used,
+          used_filters,
+          reason: series.length === 0 ? "no_observations" : undefined,
+          optimization_used: true, // Using multi-index optimization
+          indices_requested: ["NDVI", "NDMI", "RECI"]
+        };
 
-      console.log("EOS vegetation response", { observation_count: series.length, used_filters, fallback_used });
+        console.log("EOS vegetation response (optimized):", { 
+          observation_count: series.length, 
+          used_filters, 
+          fallback_used, 
+          indices: Object.keys(multiResult) 
+        });
 
-      return new Response(
-        JSON.stringify({ vegetation: out, meta }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+        return new Response(
+          JSON.stringify({ vegetation: out, meta }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+        
+      } catch (error: any) {
+        console.error("EOS vegetation error:", error);
+        
+        // Enhanced error response with provider details
+        const errorResponse = {
+          error: error?.error || error?.message || "Unknown vegetation error",
+          error_code: error?.error_code || "VEGETATION_ERROR",
+          provider_status: error?.provider_status || null,
+          retry_after: error?.retry_after || null
+        };
+        
+        const statusCode = error?.provider_status === 429 ? 429 : 500;
+        
+        return new Response(
+          JSON.stringify(errorResponse),
+          { 
+            status: statusCode,
+            headers: { 
+              ...corsHeaders, 
+              "Content-Type": "application/json",
+              ...(error?.retry_after ? { "Retry-After": error.retry_after.toString() } : {})
+            } 
+          }
+        );
+      }
     }
 
     if (action === "weather") {
       const apiKey = Deno.env.get("EOS_DATA_API_KEY");
       if (!apiKey) {
         return new Response(
-          JSON.stringify({ error: "Missing EOS API key. Please set EOS_DATA_API_KEY in Supabase secrets." }),
+          JSON.stringify({ 
+            error: "Missing EOS API key. Please set EOS_DATA_API_KEY in Supabase secrets.",
+            error_code: "MISSING_API_KEY",
+            provider_status: null
+          }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -343,16 +470,32 @@ serve(async (req) => {
       const sd = start_date ?? new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
       const ed = end_date ?? new Date().toISOString().slice(0, 10);
 
-      const url = `https://api-connect.eos.com/api/cz/backend/forecast-history/?api_key=${apiKey}`;
-      const resp = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ geometry, start_date: sd, end_date: ed }),
-      });
-      if (!resp.ok) {
-        const msg = await resp.text();
-        throw new Error(`Weather history failed: ${resp.status} ${msg}`);
-      }
+      try {
+        // Enhanced weather API call with better error handling
+        const url = `https://api-connect.eos.com/api/cz/backend/forecast-history/?api_key=${apiKey}`;
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ geometry, start_date: sd, end_date: ed }),
+        });
+        
+        if (!resp.ok) {
+          const msg = await resp.text();
+          const errorResponse = {
+            error: `Weather history failed: ${resp.status} ${msg}`,
+            error_code: resp.status === 429 ? "RATE_LIMITED" : "WEATHER_API_ERROR",
+            provider_status: resp.status
+          };
+          
+          if (resp.status === 429) {
+            const retryAfter = resp.headers.get('Retry-After');
+            if (retryAfter) {
+              (errorResponse as any).retry_after = parseInt(retryAfter);
+            }
+          }
+          
+          throw errorResponse;
+        }
       const json = await resp.json();
       const days = Array.isArray(json) ? json : [];
 

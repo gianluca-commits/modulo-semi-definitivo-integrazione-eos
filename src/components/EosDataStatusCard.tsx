@@ -12,31 +12,44 @@ interface EosDataStatusCardProps {
     start_date: string;
     end_date: string;
   };
+  onRetry?: () => void;
 }
 
 export const EosDataStatusCard: React.FC<EosDataStatusCardProps> = ({ 
   summary, 
   isDemo = false,
-  requestedPeriod 
+  requestedPeriod,
+  onRetry
 }) => {
   const meta = summary?.meta;
   const observationCount = meta?.observation_count || 0;
   const usedFilters = meta?.used_filters;
   const fallbackUsed = meta?.fallback_used;
+  const errorCode = meta?.error_code;
+  const providerStatus = meta?.provider_status;
+  const retryAfter = meta?.retry_after;
 
   const getStatusBadge = () => {
     if (isDemo) {
       return <Badge variant="secondary" className="text-xs">Demo</Badge>;
     }
+    if (errorCode === "RATE_LIMITED" || providerStatus === 429) {
+      return <Badge variant="destructive" className="text-xs">Rate Limited</Badge>;
+    }
     if (observationCount > 0) {
       return <Badge variant="default" className="text-xs">Dati Live</Badge>;
+    }
+    if (errorCode) {
+      return <Badge variant="destructive" className="text-xs">Errore</Badge>;
     }
     return <Badge variant="outline" className="text-xs">Nessun Dato</Badge>;
   };
 
   const getStatusColor = () => {
     if (isDemo) return "text-muted-foreground";
+    if (errorCode === "RATE_LIMITED" || providerStatus === 429) return "text-orange-600";
     if (observationCount > 0) return "text-primary";
+    if (errorCode) return "text-destructive";
     return "text-destructive";
   };
 
@@ -74,6 +87,34 @@ export const EosDataStatusCard: React.FC<EosDataStatusCardProps> = ({
           </span>
         </div>
 
+        {/* Enhanced Error Details */}
+        {(errorCode || providerStatus) && (
+          <div className="space-y-2 p-2 bg-muted/30 rounded text-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">Stato provider:</span>
+              <Badge variant="outline" className="text-xs font-mono">
+                {providerStatus || "N/A"}
+              </Badge>
+            </div>
+            {errorCode && (
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground">Codice errore:</span>
+                <Badge variant="outline" className="text-xs font-mono">
+                  {errorCode}
+                </Badge>
+              </div>
+            )}
+            {retryAfter && (
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground">Riprova tra:</span>
+                <Badge variant="outline" className="text-xs font-mono">
+                  {retryAfter}s
+                </Badge>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Used Filters */}
         {usedFilters && (
           <div className="grid grid-cols-3 gap-2 text-xs">
@@ -95,6 +136,18 @@ export const EosDataStatusCard: React.FC<EosDataStatusCardProps> = ({
                 {usedFilters.exclude_cover_pixels ? "Sì" : "No"}
               </Badge>
             </div>
+            {usedFilters.sensors && (
+              <div className="space-y-1 col-span-3">
+                <div className="text-muted-foreground">Sensori utilizzati</div>
+                <div className="flex gap-1 flex-wrap">
+                  {usedFilters.sensors.map((sensor: string) => (
+                    <Badge key={sensor} variant="outline" className="text-xs font-mono">
+                      {sensor}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -108,11 +161,53 @@ export const EosDataStatusCard: React.FC<EosDataStatusCardProps> = ({
           </Alert>
         )}
 
-        {observationCount === 0 && !isDemo && (
+        {(errorCode === "RATE_LIMITED" || providerStatus === 429) && (
           <Alert variant="destructive" className="py-2">
             <Info className="h-3 w-3" />
-            <AlertDescription className="text-xs">
-              Nessuna osservazione satellitare trovata per il periodo e filtri specificati
+            <AlertDescription className="text-xs flex items-center justify-between">
+              <span>Rate limit EOS raggiunto - riprova automaticamente in corso</span>
+              {onRetry && (
+                <button 
+                  onClick={onRetry}
+                  className="ml-2 text-xs underline hover:no-underline"
+                >
+                  Riprova ora
+                </button>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {observationCount === 0 && !isDemo && !errorCode && (
+          <Alert variant="destructive" className="py-2">
+            <Info className="h-3 w-3" />
+            <AlertDescription className="text-xs flex items-center justify-between">
+              <span>Nessuna osservazione satellitare trovata per il periodo e filtri specificati</span>
+              {onRetry && (
+                <button 
+                  onClick={onRetry}
+                  className="ml-2 text-xs underline hover:no-underline"
+                >
+                  Riprova
+                </button>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {errorCode && errorCode !== "RATE_LIMITED" && (
+          <Alert variant="destructive" className="py-2">
+            <Info className="h-3 w-3" />
+            <AlertDescription className="text-xs flex items-center justify-between">
+              <span>Errore nel recupero dati: {errorCode}</span>
+              {onRetry && (
+                <button 
+                  onClick={onRetry}
+                  className="ml-2 text-xs underline hover:no-underline"
+                >
+                  Riprova
+                </button>
+              )}
             </AlertDescription>
           </Alert>
         )}
