@@ -653,6 +653,31 @@ serve(async (req) => {
         JSON.stringify({ weather, meta: { mode: "live", start_date: sd, end_date: ed } }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+      } catch (error: any) {
+        console.error("EOS weather error:", error);
+        
+        // Enhanced error response with provider details for weather
+        const errorResponse = {
+          error: error?.error || error?.message || "Unknown weather error",
+          error_code: error?.error_code || "WEATHER_ERROR",
+          provider_status: error?.provider_status || null,
+          retry_after: error?.retry_after || null
+        };
+        
+        const statusCode = error?.provider_status === 429 ? 429 : 500;
+        
+        return new Response(
+          JSON.stringify(errorResponse),
+          { 
+            status: statusCode,
+            headers: { 
+              ...corsHeaders, 
+              "Content-Type": "application/json",
+              ...(error?.retry_after ? { "Retry-After": error.retry_after.toString() } : {})
+            } 
+          }
+        );
+      }
     }
 
     if ((body as any).action === "summary") {
@@ -1075,7 +1100,6 @@ serve(async (req) => {
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
 
     return new Response(JSON.stringify({ error: "Unsupported action" }), {
       status: 400,
