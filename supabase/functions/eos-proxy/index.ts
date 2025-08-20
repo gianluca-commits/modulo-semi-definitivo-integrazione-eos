@@ -86,6 +86,10 @@ serve(async (req) => {
       debug?: boolean;
     };
 
+    // Global deadline to prevent edge function timeout (110s limit)
+    const globalDeadline = Date.now() + 110000; // 110 seconds
+    const isDeadlineExceeded = () => Date.now() > globalDeadline;
+
     // Debug call logging
     const callLog: any[] = [];
     const logCall = debug ? (method: string, url: string, requestBody?: any, responseStatus?: number, retryAfter?: string) => {
@@ -258,7 +262,7 @@ serve(async (req) => {
         let attempts = 0;
         const maxAttempts = 25; // Increased for better reliability
         
-        while (attempts < maxAttempts) {
+        while (attempts < maxAttempts && !isDeadlineExceeded()) {
           attempts++;
           
           try {
@@ -304,7 +308,16 @@ serve(async (req) => {
               return resultMap;
             }
             
-            // Task still processing
+            // Task still processing - check deadline before continuing
+            if (isDeadlineExceeded()) {
+              throw {
+                error: "Statistics task timed out - global deadline exceeded",
+                error_code: "TASK_TIMEOUT",
+                provider_status: null,
+                timeout: true
+              };
+            }
+            
             const pollingDelay = Math.min(12000, 8000 + attempts * 500); // Gradual increase
             await sleep(pollingDelay);
             
@@ -317,9 +330,10 @@ serve(async (req) => {
         }
         
         throw {
-          error: "Statistics task timed out after maximum attempts",
+          error: isDeadlineExceeded() ? "Statistics task timed out - global deadline exceeded" : "Statistics task timed out after maximum attempts",
           error_code: "TASK_TIMEOUT",
-          provider_status: null
+          provider_status: null,
+          timeout: true
         };
       };
 
@@ -624,20 +638,20 @@ serve(async (req) => {
         stress_days_count: stressDaysCount
       };
 
-      // Fetch 7-day forecast
+      // Fetch 14-day forecast using forecast endpoint (as per EOS API expert recommendation)
       const forecastUrl = `https://api-connect.eos.com/api/cz/backend/forecast/?api_key=${apiKey}`;
       let forecast = [];
       try {
-        logCall("POST", forecastUrl, { geometry, days: 7 });
+        logCall("POST", forecastUrl, { geometry, days: 14 });
         const forecastResp = await fetch(forecastUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ geometry, days: 7 }),
+          body: JSON.stringify({ geometry, days: 14 }),
         });
-        logCall("POST", forecastUrl, { geometry, days: 7 }, forecastResp.status);
+        logCall("POST", forecastUrl, { geometry, days: 14 }, forecastResp.status);
         if (forecastResp.ok) {
           const forecastData = await forecastResp.json();
-          forecast = (Array.isArray(forecastData) ? forecastData : []).slice(0, 7).map((f: any) => ({
+          forecast = (Array.isArray(forecastData) ? forecastData : []).slice(0, 14).map((f: any) => ({
             date: f.date,
             temperature_min: Number(f.temperature_min) || 0,
             temperature_max: Number(f.temperature_max) || 0,
@@ -764,90 +778,173 @@ serve(async (req) => {
 
       const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-      const createAndFetchStats = async (
-        indexName: string,
+      // Reuse the multi-index function from vegetation for efficiency
+      const createAndFetchMultiStats = async (
+        indices: string[],
         filters: { maxCloud: number; excludeCover: boolean; cml: number }
-      ): Promise<Record<string, number>> => {
+      ): Promise<Record<string, Record<string, number>>> => {
         const createUrl = `https://api-connect.eos.com/api/gdw/api?api_key=${apiKey}`;
         const bodyPayload = {
           type: "mt_stats",
           params: {
-            bm_type: [indexName],
+            bm_type: indices,
             date_start: sd,
             date_end: ed,
             geometry,
-            reference: `lov-${Date.now()}-${indexName}`,
+            reference: `lov-${Date.now()}-multi-summary`,
             sensors: ["sentinel2l2a"],
             max_cloud_cover_in_aoi: filters.maxCloud,
             exclude_cover_pixels: filters.excludeCover,
             cloud_masking_level: filters.cml,
-            aoi_cover_share_min: 0.1, // Align with vegetation settings
+            aoi_cover_share_min: 0.1,
           },
         } as const;
 
+        console.log("EOS Debug - Creating summary multi-stats task with filters:", filters);
         logCall("POST", createUrl, bodyPayload);
+
         const createResp = await fetch(createUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(bodyPayload),
         });
+        
         logCall("POST", createUrl, bodyPayload, createResp.status);
+        
         if (!createResp.ok) {
           const msg = await createResp.text();
-          throw new Error(`Stats task create failed: ${createResp.status} ${msg}`);
+          const errorResponse = {
+            error: `Stats task create failed: ${createResp.status} ${msg}`,
+            error_code: "EOS_CREATE_FAILED",
+            provider_status: createResp.status
+          };
+          
+          if (createResp.status === 429) {
+            const retryAfter = createResp.headers.get('Retry-After');
+            errorResponse.error_code = "RATE_LIMITED";
+            if (retryAfter) {
+              console.log(`EOS Rate limited - Retry-After: ${retryAfter}s`);
+              (errorResponse as any).retry_after = parseInt(retryAfter);
+            }
+          }
+          
+          throw errorResponse;
         }
         const createJson = await createResp.json();
         const taskId = createJson?.task_id as string;
-        if (!taskId) throw new Error("No task_id from statistics create");
+        if (!taskId) {
+          throw {
+            error: "No task_id from statistics create",
+            error_code: "NO_TASK_ID",
+            provider_status: 200
+          };
+        }
 
         const statusUrl = `https://api-connect.eos.com/api/gdw/api/${taskId}?api_key=${apiKey}`;
         let attempts = 0;
-        while (attempts < 20) { // Increased max attempts
+        const maxAttempts = 20;
+        
+        while (attempts < maxAttempts && !isDeadlineExceeded()) {
           attempts++;
-          logCall("GET", statusUrl);
-          const st = await fetch(statusUrl);
-          logCall("GET", statusUrl, undefined, st.status);
-          if (!st.ok) {
-            const t = await st.text();
-            if (st.status === 429 || t.includes("limit")) {
-              // Enhanced backoff strategy for summary requests
-              const retryAfter = st.headers.get('Retry-After');
-              logCall("GET", statusUrl, undefined, st.status, retryAfter || undefined);
-              const backoffTime = Math.min(20000, 7000 + attempts * 2500); // 7s to 20s escalating
-              console.error(`Summary stats status 429 - backing off ${backoffTime}ms (attempt ${attempts})`);
-              await sleep(backoffTime);
-              continue;
-            }
-            throw new Error(`Stats status failed: ${st.status} ${t}`);
-          }
-          const stJson = await st.json();
-          if (stJson?.result && Array.isArray(stJson.result)) {
-            const map: Record<string, number> = {};
-            for (const r of stJson.result) {
-              if (r?.date && (typeof r.average === "number" || typeof r.average === "string")) {
-                map[r.date] = Number(r.average);
+          
+          try {
+            logCall("GET", statusUrl);
+            const st = await fetch(statusUrl);
+            logCall("GET", statusUrl, undefined, st.status);
+            
+            if (!st.ok) {
+              const t = await st.text();
+              
+              if (st.status === 429 || t.includes("limit")) {
+                const retryAfter = st.headers.get('Retry-After');
+                logCall("GET", statusUrl, undefined, st.status, retryAfter || undefined);
+                const backoffTime = retryAfter 
+                  ? Math.min(30000, parseInt(retryAfter) * 1000)
+                  : Math.min(20000, 7000 + attempts * 2500); // 7s to 20s escalating
+                
+                console.log(`EOS summary rate limited - attempt ${attempts}/${maxAttempts}, backing off ${backoffTime}ms`);
+                await sleep(backoffTime);
+                continue;
               }
+              
+              throw {
+                error: `Stats status failed: ${st.status} ${t}`,
+                error_code: "EOS_STATUS_FAILED",
+                provider_status: st.status
+              };
             }
-            return map;
+            
+            const stJson = await st.json();
+            if (stJson?.result && Array.isArray(stJson.result)) {
+              // Parse results by index type for multi-index response
+              const resultMap: Record<string, Record<string, number>> = {};
+              
+              for (const r of stJson.result) {
+                if (r?.date && r?.bm_type && (typeof r.average === "number" || typeof r.average === "string")) {
+                  const indexType = r.bm_type;
+                  if (!resultMap[indexType]) resultMap[indexType] = {};
+                  resultMap[indexType][r.date] = Number(r.average);
+                }
+              }
+              
+              return resultMap;
+            }
+            
+            // Task still processing - check deadline before continuing
+            if (isDeadlineExceeded()) {
+              throw {
+                error: "Statistics task timed out - global deadline exceeded",
+                error_code: "TASK_TIMEOUT",
+                provider_status: null,
+                timeout: true
+              };
+            }
+            
+            const pollingDelay = Math.min(12000, 8000 + attempts * 500);
+            await sleep(pollingDelay);
+            
+          } catch (fetchError: any) {
+            if (attempts >= maxAttempts || isDeadlineExceeded()) throw fetchError;
+            
+            console.warn(`Summary fetch error on attempt ${attempts}, retrying:`, fetchError?.message);
+            await sleep(5000);
           }
-          await sleep(8000);
         }
-        throw new Error("Statistics task timed out");
+        
+        throw {
+          error: isDeadlineExceeded() ? "Statistics task timed out - global deadline exceeded" : "Statistics task timed out after maximum attempts",
+          error_code: "TASK_TIMEOUT",
+          provider_status: null,
+          timeout: true
+        };
       };
 
-      // Fetch NDVI/NDMI with optional auto-fallback
+      // Consolidated single multi-index call for NDVI & NDMI (as per EOS API expert recommendation)
       let fallback_used = false;
-      let ndviMap = await createAndFetchStats("NDVI", { maxCloud, excludeCover, cml });
-      let ndmiMap = await createAndFetchStats("NDMI", { maxCloud, excludeCover, cml });
-      const initialDates = Array.from(new Set([...Object.keys(ndviMap), ...Object.keys(ndmiMap)]));
-      if (initialDates.length === 0 && autoFallback) {
-        fallback_used = true;
-        console.log("EOS summary empty, auto-fallback enabled, trying most permissive filters");
-        ndviMap = await createAndFetchStats("NDVI", { maxCloud: 90, excludeCover: false, cml: 0 });
-        ndmiMap = await createAndFetchStats("NDMI", { maxCloud: 90, excludeCover: false, cml: 0 });
-      }
-      const allDates = Array.from(new Set([...Object.keys(ndviMap), ...Object.keys(ndmiMap)])).sort();
-      const series = allDates.map((d) => ({ date: d, NDVI: Number(ndviMap[d] ?? 0), NDMI: Number(ndmiMap[d] ?? 0) }));
+      let finalFilters = { maxCloud, excludeCover, cml };
+      
+      try {
+        // Single consolidated request for NDVI and NDMI
+        const multiResult = await createAndFetchMultiStats(["NDVI", "NDMI"], finalFilters);
+        
+        let ndviMap = multiResult.NDVI || {};
+        let ndmiMap = multiResult.NDMI || {};
+        
+        const initialDates = Array.from(new Set([...Object.keys(ndviMap), ...Object.keys(ndmiMap)]));
+        
+        if (initialDates.length === 0 && autoFallback) {
+          // Fallback with more permissive settings
+          fallback_used = true;
+          finalFilters = { maxCloud: 90, excludeCover: false, cml: 0 };
+          console.log("EOS summary empty, auto-fallback enabled, trying permissive filters:", finalFilters);
+          
+          const fallbackResult = await createAndFetchMultiStats(["NDVI", "NDMI"], finalFilters);
+          ndviMap = fallbackResult.NDVI || {};
+          ndmiMap = fallbackResult.NDMI || {};
+        }
+
+        const allDates = Array.from(new Set([...Object.keys(ndviMap), ...Object.keys(ndmiMap)])).sort();
+        const series = allDates.map((d) => ({ date: d, NDVI: Number(ndviMap[d] ?? 0), NDMI: Number(ndmiMap[d] ?? 0) }));
 
       // Helper time functions
       const toTs = (ds: string) => new Date(ds).getTime();
@@ -986,17 +1083,21 @@ serve(async (req) => {
       const target = isCold ? 40 : 70;
       const precipitation_deficit_mm = Number((precip_30d - target).toFixed(1));
 
-      // Forecast next 7 days
-      const sevenAhead = new Date(Date.now() + 7 * 86400000).toISOString().slice(0,10);
-      logCall("POST", weatherUrl, { geometry, start_date: todayIso, end_date: sevenAhead });
-      const forecastResp = await fetch(weatherUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ geometry, start_date: todayIso, end_date: sevenAhead }),
-      });
-      logCall("POST", weatherUrl, { geometry, start_date: todayIso, end_date: sevenAhead }, forecastResp.status);
+      // Forecast next 14 days using forecast endpoint (as per EOS API expert recommendation)
+      const forecastUrl = `https://api-connect.eos.com/api/cz/backend/forecast/?api_key=${apiKey}`;
       let forecast: any[] = [];
-      if (forecastResp.ok) forecast = await forecastResp.json();
+      try {
+        logCall("POST", forecastUrl, { geometry, days: 14 });
+        const forecastResp = await fetch(forecastUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ geometry, days: 14 }),
+        });
+        logCall("POST", forecastUrl, { geometry, days: 14 }, forecastResp.status);
+        if (forecastResp.ok) forecast = await forecastResp.json();
+      } catch (e) {
+        console.log("Summary forecast fetch failed:", e);
+      }
 
       const frost_risk_forecast_7d = forecast.some((d: any) => Number(d.temperature_min) < 0);
       const hotDays = forecast.filter((d: any) => Number(d.temperature_max) > heatThreshold).length;
@@ -1036,10 +1137,14 @@ serve(async (req) => {
           observation_count: series.length,
           fallback_used,
           used_filters: {
-            max_cloud_cover_in_aoi: fallback_used ? 90 : maxCloud,
-            exclude_cover_pixels: fallback_used ? false : excludeCover,
-            cloud_masking_level: fallback_used ? 0 : cml,
+            max_cloud_cover_in_aoi: finalFilters.maxCloud,
+            exclude_cover_pixels: finalFilters.excludeCover,
+            cloud_masking_level: finalFilters.cml,
+            sensors: ["sentinel2l2a"],
+            aoi_cover_share_min: 0.1
           },
+          optimization_used: true, // Using multi-index optimization
+          indices_requested: ["NDVI", "NDMI"]
         },
       };
 
@@ -1057,27 +1162,105 @@ serve(async (req) => {
         ];
       }
       
-      const responseData: any = response;
-      if (debug && callLog.length > 0) {
-        responseData.debug = { call_log: callLog };
+        const responseData: any = response;
+        if (debug && callLog.length > 0) {
+          responseData.debug = { call_log: callLog };
+        }
+        
+        return new Response(JSON.stringify(responseData), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        
+      } catch (error: any) {
+        console.error("EOS summary error:", error);
+        
+        // Enhanced error response with timeout handling
+        const errorResponse = {
+          error: error?.error || error?.message || "Unknown summary error",
+          error_code: error?.error_code || "SUMMARY_ERROR",
+          provider_status: error?.provider_status || null,
+          retry_after: error?.retry_after || null,
+          timeout: error?.timeout || false
+        };
+        
+        const statusCode = error?.provider_status === 429 ? 429 : 500;
+        
+        const finalErrorResponse: any = errorResponse;
+        if (debug && callLog.length > 0) {
+          finalErrorResponse.debug = { call_log: callLog };
+        }
+        
+        return new Response(
+          JSON.stringify(finalErrorResponse),
+          { 
+            status: statusCode,
+            headers: { 
+              ...corsHeaders, 
+              "Content-Type": "application/json",
+              ...(error?.retry_after ? { "Retry-After": error.retry_after.toString() } : {})
+            } 
+          }
+        );
       }
-      
-      return new Response(JSON.stringify(responseData), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Add soil moisture action
+    // Soil moisture action - EOS Add-on service
     if (action === "soil_moisture") {
-      const apiKey = Deno.env.get("EOS_DATA_API_KEY");
-      if (!apiKey) {
+      // Build geometry for location check
+      const buildGeometry = () => {
+        if (polygon?.coordinates && polygon.coordinates.length >= 4) {
+          const coords = cleanCoordinates(polygon.coordinates);
+          const first = coords[0];
+          const last = coords[coords.length - 1];
+          const ring = first[0] === last[0] && first[1] === last[1] ? coords : [...coords, first];
+          return { type: "Polygon", coordinates: [ring] } as const;
+        }
+        if (polygon?.geojson) {
+          try {
+            const parsed = JSON.parse(polygon.geojson);
+            if (parsed?.type === "Polygon") return parsed;
+            if (parsed?.type === "Feature" && parsed.geometry?.type === "Polygon") return parsed.geometry;
+            if (parsed?.type === "FeatureCollection" && parsed.features?.[0]?.geometry?.type === "Polygon") return parsed.features[0].geometry;
+          } catch (_) {}
+        }
+        throw new Error("Invalid polygon geometry");
+      };
+
+      const geometry = buildGeometry();
+      
+      // Check if location is in Brazil (simplified check)
+      const isInBrazil = () => {
+        const coords = geometry.coordinates[0];
+        for (const [lon, lat] of coords) {
+          // Brazil bounds approximately: -74W to -34W, -34S to 5N
+          if (lon >= -74 && lon <= -34 && lat >= -34 && lat <= 5) {
+            return true;
+          }
+        }
+        return false;
+      };
+
+      // Soil Moisture is an EOS Add-on service available only for Brazil
+      if (!isInBrazil()) {
+        const responseData: any = {
+          error: "Soil Moisture data is only available for areas within Brazil. This is an EOS Add-on service.",
+          error_code: "SOIL_MOISTURE_NOT_AVAILABLE",
+          provider_status: null,
+          add_on_required: true,
+          supported_regions: ["Brazil"],
+          contact_info: "Contact EOS to enable Soil Moisture Add-on for your account"
+        };
+        
+        if (debug && callLog.length > 0) {
+          responseData.debug = { call_log: callLog };
+        }
+        
         return new Response(
-          JSON.stringify({ error: "Missing EOS API key. Please set EOS_DATA_API_KEY in Supabase secrets." }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify(responseData),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      // For demo implementation, generate realistic soil moisture data
+      // For Brazil locations, indicate that Add-on needs to be enabled
       const crop_type = body.crop_type || "wheat";
-      const currentMonth = new Date().getMonth() + 1;
       
       // Generate realistic soil moisture based on season and crop
       const generateSoilMoisture = () => {
@@ -1145,10 +1328,28 @@ serve(async (req) => {
         } as any;
       };
 
+      // Note: This returns demo data. To use real EOS Soil Moisture API:
+      // 1. Enable Soil Moisture Add-on in your EOS account
+      // 2. Replace this with actual API call to EOS soil moisture endpoint
+      
       const soilMoistureData = generateSoilMoisture();
+      
+      const responseData: any = {
+        soil_moisture: soilMoistureData,
+        meta: {
+          mode: "demo",
+          add_on_status: "not_enabled",
+          note: "Soil Moisture is an EOS Add-on service. Contact EOS to enable real-time soil moisture data.",
+          demo_data: true
+        }
+      };
+      
+      if (debug && callLog.length > 0) {
+        responseData.debug = { call_log: callLog };
+      }
 
       return new Response(
-        JSON.stringify({ soil_moisture: soilMoistureData }),
+        JSON.stringify(responseData),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
