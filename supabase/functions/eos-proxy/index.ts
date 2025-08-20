@@ -78,12 +78,26 @@ serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { action, polygon, start_date, end_date } = body as {
+    const { action, polygon, start_date, end_date, debug } = body as {
       action: "vegetation" | "weather" | "summary" | "soil_moisture";
       polygon?: PolygonData;
       start_date?: string;
       end_date?: string;
+      debug?: boolean;
     };
+
+    // Debug call logging
+    const callLog: any[] = [];
+    const logCall = debug ? (method: string, url: string, requestBody?: any, responseStatus?: number, retryAfter?: string) => {
+      callLog.push({
+        timestamp: new Date().toISOString(),
+        method,
+        url: url.replace(/api_key=[^&]+/, 'api_key=***HIDDEN***'),
+        request_body: requestBody ? JSON.stringify(requestBody).substring(0, 500) : undefined,
+        response_status: responseStatus,
+        retry_after: retryAfter
+      });
+    } : () => {};
 
     const eosKey = Deno.env.get("EOS_DATA_API_KEY");
     const eosStatsBearer = Deno.env.get("EOS_STATISTICS_BEARER");
@@ -201,12 +215,15 @@ serve(async (req) => {
         } as const;
 
         console.log("EOS Debug - Creating multi-stats task with filters:", filters);
+        logCall("POST", createUrl, bodyPayload);
 
         const createResp = await fetch(createUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(bodyPayload),
         });
+        
+        logCall("POST", createUrl, bodyPayload, createResp.status);
         
         if (!createResp.ok) {
           const msg = await createResp.text();
@@ -245,13 +262,16 @@ serve(async (req) => {
           attempts++;
           
           try {
+            logCall("GET", statusUrl);
             const st = await fetch(statusUrl);
+            logCall("GET", statusUrl, undefined, st.status);
             
             if (!st.ok) {
               const t = await st.text();
               
               if (st.status === 429 || t.includes("limit")) {
                 const retryAfter = st.headers.get('Retry-After');
+                logCall("GET", statusUrl, undefined, st.status, retryAfter || undefined);
                 const backoffTime = retryAfter 
                   ? Math.min(30000, parseInt(retryAfter) * 1000)
                   : Math.min(20000, 3000 + attempts * 1500 + Math.random() * 2000); // Jitter
@@ -399,8 +419,13 @@ serve(async (req) => {
           indices: Object.keys(multiResult) 
         });
 
+        const responseData: any = { vegetation: out, meta };
+        if (debug && callLog.length > 0) {
+          responseData.debug = { call_log: callLog };
+        }
+
         return new Response(
-          JSON.stringify({ vegetation: out, meta }),
+          JSON.stringify(responseData),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
         
@@ -473,11 +498,15 @@ serve(async (req) => {
       try {
         // Enhanced weather API call with better error handling
         const url = `https://api-connect.eos.com/api/cz/backend/forecast-history/?api_key=${apiKey}`;
+        logCall("POST", url, { geometry, start_date: sd, end_date: ed });
+        
         const resp = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ geometry, start_date: sd, end_date: ed }),
         });
+        
+        logCall("POST", url, { geometry, start_date: sd, end_date: ed }, resp.status);
         
         if (!resp.ok) {
           const msg = await resp.text();
@@ -599,11 +628,13 @@ serve(async (req) => {
       const forecastUrl = `https://api-connect.eos.com/api/cz/backend/forecast/?api_key=${apiKey}`;
       let forecast = [];
       try {
+        logCall("POST", forecastUrl, { geometry, days: 7 });
         const forecastResp = await fetch(forecastUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ geometry, days: 7 }),
         });
+        logCall("POST", forecastUrl, { geometry, days: 7 }, forecastResp.status);
         if (forecastResp.ok) {
           const forecastData = await forecastResp.json();
           forecast = (Array.isArray(forecastData) ? forecastData : []).slice(0, 7).map((f: any) => ({
@@ -649,8 +680,13 @@ serve(async (req) => {
         historical_comparison
       };
 
+      const responseData: any = { weather, meta: { mode: "live", start_date: sd, end_date: ed } };
+      if (debug && callLog.length > 0) {
+        responseData.debug = { call_log: callLog };
+      }
+
       return new Response(
-        JSON.stringify({ weather, meta: { mode: "live", start_date: sd, end_date: ed } }),
+        JSON.stringify(responseData),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
       } catch (error: any) {
@@ -745,14 +781,17 @@ serve(async (req) => {
             max_cloud_cover_in_aoi: filters.maxCloud,
             exclude_cover_pixels: filters.excludeCover,
             cloud_masking_level: filters.cml,
+            aoi_cover_share_min: 0.1, // Align with vegetation settings
           },
         } as const;
 
+        logCall("POST", createUrl, bodyPayload);
         const createResp = await fetch(createUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(bodyPayload),
         });
+        logCall("POST", createUrl, bodyPayload, createResp.status);
         if (!createResp.ok) {
           const msg = await createResp.text();
           throw new Error(`Stats task create failed: ${createResp.status} ${msg}`);
@@ -765,11 +804,15 @@ serve(async (req) => {
         let attempts = 0;
         while (attempts < 20) { // Increased max attempts
           attempts++;
+          logCall("GET", statusUrl);
           const st = await fetch(statusUrl);
+          logCall("GET", statusUrl, undefined, st.status);
           if (!st.ok) {
             const t = await st.text();
             if (st.status === 429 || t.includes("limit")) {
               // Enhanced backoff strategy for summary requests
+              const retryAfter = st.headers.get('Retry-After');
+              logCall("GET", statusUrl, undefined, st.status, retryAfter || undefined);
               const backoffTime = Math.min(20000, 7000 + attempts * 2500); // 7s to 20s escalating
               console.error(`Summary stats status 429 - backing off ${backoffTime}ms (attempt ${attempts})`);
               await sleep(backoffTime);
@@ -920,11 +963,13 @@ serve(async (req) => {
       // Weather risks
       const weatherUrl = `https://api-connect.eos.com/api/cz/backend/forecast-history/?api_key=${apiKey}`;
       // Historical last 30d
+      logCall("POST", weatherUrl, { geometry, start_date: new Date(Date.now() - 30 * 86400000).toISOString().slice(0,10), end_date: todayIso });
       const historyResp = await fetch(weatherUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ geometry, start_date: new Date(Date.now() - 30 * 86400000).toISOString().slice(0,10), end_date: todayIso }),
       });
+      logCall("POST", weatherUrl, { geometry, start_date: new Date(Date.now() - 30 * 86400000).toISOString().slice(0,10), end_date: todayIso }, historyResp.status);
       let history: any[] = [];
       if (historyResp.ok) history = await historyResp.json();
 
@@ -943,11 +988,13 @@ serve(async (req) => {
 
       // Forecast next 7 days
       const sevenAhead = new Date(Date.now() + 7 * 86400000).toISOString().slice(0,10);
+      logCall("POST", weatherUrl, { geometry, start_date: todayIso, end_date: sevenAhead });
       const forecastResp = await fetch(weatherUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ geometry, start_date: todayIso, end_date: sevenAhead }),
       });
+      logCall("POST", weatherUrl, { geometry, start_date: todayIso, end_date: sevenAhead }, forecastResp.status);
       let forecast: any[] = [];
       if (forecastResp.ok) forecast = await forecastResp.json();
 
@@ -1010,7 +1057,12 @@ serve(async (req) => {
         ];
       }
       
-      return new Response(JSON.stringify(response), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const responseData: any = response;
+      if (debug && callLog.length > 0) {
+        responseData.debug = { call_log: callLog };
+      }
+      
+      return new Response(JSON.stringify(responseData), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // Add soil moisture action

@@ -91,6 +91,8 @@ const EOSTester: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<string>("");
   const [showApiKey, setShowApiKey] = useState(false);
+  const [isDebugMode, setIsDebugMode] = useState(false);
+  const [callLog, setCallLog] = useState<any[]>([]);
 
   useEffect(() => {
     // Load API key from localStorage
@@ -352,15 +354,28 @@ const EOSTester: React.FC = () => {
     setIsLoading(true);
     setErrors("");
     setCurrentStep(3);
+    setCallLog([]); // Reset call log
 
     try {
       // Avvia la richiesta di summary in parallelo (best-effort)
-      getEosSummary(polygonData, eosConfig)
-        .then((sm) => setSummary(sm))
+      getEosSummary(polygonData, eosConfig, isDebugMode)
+        .then((sm) => {
+          setSummary(sm);
+          // Extract call log if available
+          if ((sm as any).debug?.call_log) {
+            setCallLog((sm as any).debug.call_log);
+          }
+        })
         .catch((e) => console.warn("eos summary error", e));
 
-      const vegetation = await getVegetationTimeSeries(polygonData, eosConfig);
+      const vegetation = await getVegetationTimeSeries(polygonData, eosConfig, isDebugMode);
       setTestResults((p) => ({ ...p, vegetation }));
+      
+      // Extract call log from vegetation response
+      if ((vegetation as any).debug?.call_log) {
+        setCallLog(prev => [...prev, ...(vegetation as any).debug.call_log]);
+      }
+      
       if (!vegetation.time_series || vegetation.time_series.length === 0) {
         const reason = (vegetation as any).meta?.reason;
         toast({
@@ -371,8 +386,13 @@ const EOSTester: React.FC = () => {
         });
       }
 
-      const weather = await getWeatherSummary(polygonData, eosConfig);
+      const weather = await getWeatherSummary(polygonData, eosConfig, isDebugMode);
       setTestResults((p) => ({ ...p, weather }));
+      
+      // Extract call log from weather response
+      if ((weather as any).debug?.call_log) {
+        setCallLog(prev => [...prev, ...(weather as any).debug.call_log]);
+      }
 
       const productivity = computeProductivity(eosConfig.cropType);
       // Simulate prediction time
@@ -395,6 +415,7 @@ const EOSTester: React.FC = () => {
     setTestResults({ vegetation: null, weather: null, productivity: null });
     setSummary(null);
     setErrors("");
+    setCallLog([]);
   };
 
   return (
@@ -666,6 +687,19 @@ const EOSTester: React.FC = () => {
                   </label>
                   <p className="text-xs text-muted-foreground mt-2">Aumenta copertura nuvolosa max e riduce mascheramento per ottenere più osservazioni.</p>
                 </div>
+
+                <div className="bg-muted rounded-xl p-6 border border-border mt-6">
+                  <h3 className="text-lg font-semibold mb-4 text-foreground">Debug EOS</h3>
+                  <label className="flex items-center gap-3 text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={isDebugMode}
+                      onChange={(e) => setIsDebugMode(e.target.checked)}
+                    />
+                    <span>Abilita debug chiamate API</span>
+                  </label>
+                  <p className="text-xs text-muted-foreground mt-2">Raccoglie e mostra tutte le chiamate EOS per troubleshooting con l'esperto API.</p>
+                </div>
               </div>
 
               <div className="bg-primary/5 rounded-xl p-6 border border-border">
@@ -891,6 +925,32 @@ const EOSTester: React.FC = () => {
                         </AccordionItem>
                       </Accordion>
                     </div>
+
+                    {isDebugMode && callLog.length > 0 && (
+                      <div className="bg-muted rounded-xl p-4 border border-border">
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-lg font-semibold text-foreground">Call Log EOS API ({callLog.length} chiamate)</h3>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(JSON.stringify(callLog, null, 2));
+                              toast({ title: "Call log copiato", description: "Pronto per invio all'esperto EOS" });
+                            }}
+                            className="px-3 py-1 bg-primary text-primary-foreground rounded-lg text-sm hover:opacity-90 flex items-center gap-2"
+                          >
+                            <Copy className="w-4 h-4" />
+                            Copia per esperto EOS
+                          </button>
+                        </div>
+                        <Accordion type="single" collapsible className="w-full">
+                          <AccordionItem value="calllog">
+                            <AccordionTrigger>Mostra chiamate API dettagliate</AccordionTrigger>
+                            <AccordionContent>
+                              <pre className="mt-3 p-3 bg-background rounded-lg border border-border text-xs overflow-auto max-h-96">{JSON.stringify(callLog, null, 2)}</pre>
+                            </AccordionContent>
+                          </AccordionItem>
+                        </Accordion>
+                      </div>
+                    )}
 
                     <div className="grid lg:grid-cols-2 gap-8">
                       <div className="bg-muted rounded-xl p-6 border border-border">

@@ -369,7 +369,8 @@ export function computeProductivity(cropType: EosConfig["cropType"]): Productivi
 // Placeholder for real EOS API calls. For security, route real requests via a Supabase Edge Function.
 export async function getVegetationTimeSeries(
   _polygon: PolygonData,
-  config: EosConfig
+  config: EosConfig,
+  debug?: boolean
 ): Promise<VegetationData> {
   if (config.apiKey === "demo") {
     // Simulate network delay
@@ -395,6 +396,7 @@ export async function getVegetationTimeSeries(
           exclude_cover_pixels: config.exclude_cover_pixels,
           cloud_masking_level: config.cloud_masking_level,
           auto_fallback: config.auto_fallback,
+          debug: debug,
         },
       });
 
@@ -481,7 +483,8 @@ export async function getVegetationTimeSeries(
 
 export async function getWeatherSummary(
   _polygon: PolygonData,
-  config: EosConfig
+  config: EosConfig,
+  debug?: boolean
 ): Promise<WeatherData> {
   if (config.apiKey === "demo") {
     await new Promise((r) => setTimeout(r, 600));
@@ -502,6 +505,7 @@ export async function getWeatherSummary(
           polygon: _polygon,
           start_date: config.start_date,
           end_date: config.end_date,
+          debug: debug,
         },
       });
 
@@ -615,7 +619,8 @@ export interface EosSummary {
 
 export async function getEosSummary(
   _polygon: PolygonData,
-  config: EosConfig
+  config: EosConfig,
+  debug?: boolean
 ): Promise<EosSummary> {
   // Calculate dynamic dates: start from planting_date, end today
   const today = new Date().toISOString().slice(0, 10);
@@ -742,6 +747,7 @@ export async function getEosSummary(
         max_cloud_cover_in_aoi: requestConfig.max_cloud_cover_in_aoi,
         exclude_cover_pixels: requestConfig.exclude_cover_pixels,
         cloud_masking_level: requestConfig.cloud_masking_level,
+        debug: debug,
       },
     });
     return res;
