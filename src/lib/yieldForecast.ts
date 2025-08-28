@@ -232,7 +232,11 @@ export function forecastYield(
   const maxYield = estimatedYield * (1 + uncertainty);
   
   // Collect all limiting factors
-  const allLimitingFactors = [
+  const allLimitingFactors: Array<{
+    factor: string;
+    impact_percent: number;
+    severity: "low" | "medium" | "high";
+  }> = [
     ...ndviImpact.limiting_factors.map(f => ({ factor: f, impact_percent: 15, severity: "medium" as const })),
     ...weatherImpact.stress_factors.map(f => ({ factor: f, impact_percent: 12, severity: "medium" as const }))
   ];
