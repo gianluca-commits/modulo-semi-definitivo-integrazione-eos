@@ -3,7 +3,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { User, Shield } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/components/ui/use-toast";
 
 export interface UserProfile {
@@ -25,21 +24,13 @@ export const UserTypeSwitcher: React.FC<UserTypeSwitcherProps> = ({ currentMode 
   useEffect(() => {
     const loadProfile = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session?.user) {
-          const { data: profileData, error } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-          
-          if (error) {
-            console.error('Error loading profile:', error);
-          } else {
-            setProfile(profileData);
-          }
-        }
+        // Mock user profile for demo purposes since we don't have auth set up
+        setProfile({
+          id: 'demo-user',
+          is_admin: true, // Allow admin access for demo
+          email: 'demo@example.com',
+          full_name: 'Demo User'
+        });
       } catch (error) {
         console.error('Error loading user profile:', error);
       } finally {

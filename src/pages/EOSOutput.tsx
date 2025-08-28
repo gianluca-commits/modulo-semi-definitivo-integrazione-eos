@@ -16,6 +16,7 @@ import { WeatherAnalyticsCard } from "@/components/WeatherAnalyticsCard";
 import { SoilMoistureAnalyticsCard } from "@/components/SoilMoistureAnalyticsCard";
 import { PhenologyCard } from "@/components/PhenologyCard";
 import { YieldForecastCard } from "@/components/YieldForecastCard";
+import { ProductivityPredictionCard } from "@/components/ProductivityPredictionCard";
 import { analyzeTemporalTrends } from "@/lib/eosAnalysis";
 import { generateIntelligentAlerts, AlertsBundle } from "@/lib/intelligentAlerts";
 import { analyzeVegetationHealth } from "@/lib/vegetationHealth";
@@ -655,7 +656,19 @@ const EOSOutput: React.FC = () => {
               </CardContent>
             </Card>}
 
-          {/* Productivity */}
+          {/* Productivity Prediction Section */}
+          {userCfg?.province && (
+            <div className="space-y-4">
+              <h2 className="text-2xl font-semibold text-primary">Previsione Produttività</h2>
+              <ProductivityPredictionCard 
+                province={userCfg.province}
+                cropType={userCfg.cropType || "sunflower"}
+                timeSeries={ts}
+                weather={weatherData}
+                area={polygon?.area_ha || 1}
+              />
+            </div>
+          )}
           
         </div>
       </section>

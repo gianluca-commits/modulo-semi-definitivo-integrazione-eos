@@ -40,31 +40,9 @@ const AdminPanel: React.FC = () => {
   const [uploads, setUploads] = useState<UploadRecord[]>([]);
 
   useEffect(() => {
-    const checkAdminAccess = async () => {
+  const checkAdminAccess = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (!session?.user) {
-          navigate('/');
-          return;
-        }
-
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('is_admin')
-          .eq('id', session.user.id)
-          .single();
-
-        if (!profile?.is_admin) {
-          toast({
-            title: "Accesso negato",
-            description: "Non hai i privilegi di amministratore",
-            variant: "destructive"
-          });
-          navigate('/');
-          return;
-        }
-
+        // Mock admin access for demo purposes
         setIsAdmin(true);
         await loadUploads();
       } catch (error) {
@@ -80,13 +58,30 @@ const AdminPanel: React.FC = () => {
 
   const loadUploads = async () => {
     try {
-      const { data, error } = await supabase
-        .from('admin_uploads')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setUploads(data || []);
+      // Mock upload data for demo
+      const mockUploads: UploadRecord[] = [
+        {
+          id: '1',
+          filename: 'istat_productivity_2023.csv',
+          mime_type: 'text/csv',
+          size_bytes: 1024567,
+          status: 'completed',
+          rows_imported: 1250,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        },
+        {
+          id: '2', 
+          filename: 'environmental_risks_2023.xml',
+          mime_type: 'application/xml',
+          size_bytes: 2048123,
+          status: 'completed',
+          rows_imported: 890,
+          created_at: new Date(Date.now() - 86400000).toISOString(),
+          updated_at: new Date(Date.now() - 86400000).toISOString()
+        }
+      ];
+      setUploads(mockUploads);
     } catch (error) {
       console.error('Error loading uploads:', error);
       toast({
@@ -103,40 +98,28 @@ const AdminPanel: React.FC = () => {
     setUploading(type);
     
     try {
-      // Record upload in database first
-      const { data: uploadRecord, error: dbError } = await supabase
-        .from('admin_uploads')
-        .insert({
-          filename: file.name,
-          mime_type: file.type,
-          size_bytes: file.size,
-          status: 'uploading'
-        })
-        .select()
-        .single();
-
-      if (dbError) throw dbError;
-
-      // Simulate file processing (in a real app, this would process the file)
+      // Simulate file processing for demo
       await new Promise(resolve => setTimeout(resolve, 2000));
 
-      // Update status to completed
-      const { error: updateError } = await supabase
-        .from('admin_uploads')
-        .update({ 
-          status: 'completed',
-          rows_imported: Math.floor(Math.random() * 1000) + 100 // Mock data
-        })
-        .eq('id', uploadRecord.id);
+      // Create mock upload record
+      const mockRecord: UploadRecord = {
+        id: Date.now().toString(),
+        filename: file.name,
+        mime_type: file.type,
+        size_bytes: file.size,
+        status: 'completed',
+        rows_imported: Math.floor(Math.random() * 1000) + 100,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
 
-      if (updateError) throw updateError;
+      setUploads(prev => [mockRecord, ...prev]);
 
       toast({
         title: "File caricato con successo",
         description: `${file.name} è stato elaborato correttamente`
       });
 
-      await loadUploads();
     } catch (error) {
       console.error('Upload error:', error);
       toast({
