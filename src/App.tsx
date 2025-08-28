@@ -9,6 +9,7 @@ import NotFound from "./pages/NotFound";
 import EOSTester from "./pages/EOSTester";
 import EOSInput from "./pages/EOSInput";
 import EOSOutput from "./pages/EOSOutput";
+import AdminPanel from "./pages/AdminPanel";
 
 const queryClient = new QueryClient();
 
@@ -23,6 +24,7 @@ const App = () => (
             <Route path="/" element={<EOSInput />} />
             <Route path="/eos" element={<EOSInput />} />
             <Route path="/output" element={<EOSOutput />} />
+            <Route path="/admin" element={<AdminPanel />} />
             <Route path="/welcome" element={<Index />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />

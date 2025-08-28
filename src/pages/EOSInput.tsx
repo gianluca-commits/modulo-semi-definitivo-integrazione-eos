@@ -14,6 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
+import { UserTypeSwitcher } from "@/components/UserTypeSwitcher";
+import { ProvinceSelector } from "@/components/ProvinceSelector";
 
 // Top 10 colture in Italia (indicative)
 const TOP_CROPS = [
@@ -70,6 +72,7 @@ const EOSInput: React.FC = () => {
   const formatDate = (d: Date) => d.toISOString().slice(0, 10);
 
   // Form state
+  const [province, setProvince] = useState<string>("");
   const [crop, setCrop] = useState<string>("sunflower");
   const [irrigation, setIrrigation] = useState<string>("rainfed");
   const [fertilization, setFertilization] = useState<string>("mineral");
@@ -251,6 +254,16 @@ const EOSInput: React.FC = () => {
   const dateValidation = validateDateRange();
 
   const handleSubmit = () => {
+    if (!province) {
+      toast({ title: "Provincia mancante", description: "Seleziona la provincia di riferimento.", variant: "destructive" });
+      return;
+    }
+
+    if (!crop) {
+      toast({ title: "Coltura mancante", description: "Seleziona il tipo di coltura.", variant: "destructive" });
+      return;
+    }
+
     if (!polygonData.geojson) {
       toast({ title: "Campo mancante", description: "Seleziona il campo sulla mappa o carica un file.", variant: "destructive" });
       return;
@@ -264,10 +277,18 @@ const EOSInput: React.FC = () => {
     const start_date = formatDate(dateRange.from!);
     const end_date = formatDate(dateRange.to!);
 
-      localStorage.setItem("eos_polygon", JSON.stringify(polygonData));
+    localStorage.setItem("eos_polygon", JSON.stringify(polygonData));
     localStorage.setItem(
       "eos_user_config",
-      JSON.stringify({ cropType: crop, irrigation, fertilization, planting_date: plantingDate, start_date, end_date })
+      JSON.stringify({ 
+        province,
+        cropType: crop, 
+        irrigation, 
+        fertilization, 
+        planting_date: plantingDate, 
+        start_date, 
+        end_date 
+      })
     );
 
     navigate("/output");
@@ -280,13 +301,60 @@ const EOSInput: React.FC = () => {
         <div className="max-w-6xl mx-auto px-4 py-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <MapPin className="w-6 h-6 text-foreground" />
-            <h1 className="text-2xl font-bold text-foreground">Analisi Campo - Input</h1>
+            <h1 className="text-2xl font-bold text-foreground">Previsione Produttività Agricola</h1>
           </div>
+          <UserTypeSwitcher currentMode="user" />
         </div>
       </header>
 
       <section className="max-w-6xl mx-auto px-4 py-8 space-y-6">
-        {/* Campo Selection */}
+        {/* Step 1: Location and Crop Selection */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-primary" />
+              Selezione Provincia e Coltura
+            </CardTitle>
+            <CardDescription>
+              Seleziona la provincia e il tipo di coltura per l'analisi di produttività
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid md:grid-cols-2 gap-6">
+              <ProvinceSelector
+                value={province}
+                onValueChange={setProvince}
+              />
+              <div>
+                <Label htmlFor="crop-select">Tipo di coltura</Label>
+                <Select value={crop} onValueChange={setCrop}>
+                  <SelectTrigger id="crop-select">
+                    <SelectValue placeholder="Seleziona coltura..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TOP_CROPS.map((cropOption) => (
+                      <SelectItem key={cropOption.value} value={cropOption.value}>
+                        {cropOption.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            
+            {province && crop && (
+              <Alert className="mt-4">
+                <AlertCircle className="w-4 h-4" />
+                <AlertDescription>
+                  Analisi configurata per <strong>{crop}</strong> in provincia di <strong>{province}</strong>. 
+                  Procedi alla selezione del campo per completare l'analisi.
+                </AlertDescription>
+              </Alert>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Step 2: Campo Selection */}
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
             <div className="space-y-4">
