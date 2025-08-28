@@ -7,112 +7,169 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instanciate createClient with right options
+  // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "12.2.12 (cd3cf9e)"
   }
   public: {
     Tables: {
-      agricultural_data: {
+      admin_uploads: {
         Row: {
           created_at: string
-          crop_code: string
-          data_source: string | null
+          filename: string
           id: string
-          production_quintals: number | null
-          productivity_quintals_per_hectare: number | null
-          province_code: string
-          surface_hectares: number | null
+          mime_type: string
+          rows_imported: number | null
+          size_bytes: number
+          status: string
           updated_at: string
-          year: number
+          user_id: string
         }
         Insert: {
           created_at?: string
-          crop_code: string
-          data_source?: string | null
+          filename: string
           id?: string
-          production_quintals?: number | null
-          productivity_quintals_per_hectare?: number | null
-          province_code: string
-          surface_hectares?: number | null
+          mime_type: string
+          rows_imported?: number | null
+          size_bytes: number
+          status?: string
           updated_at?: string
-          year: number
+          user_id: string
         }
         Update: {
           created_at?: string
-          crop_code?: string
-          data_source?: string | null
+          filename?: string
           id?: string
-          production_quintals?: number | null
-          productivity_quintals_per_hectare?: number | null
-          province_code?: string
-          surface_hectares?: number | null
+          mime_type?: string
+          rows_imported?: number | null
+          size_bytes?: number
+          status?: string
           updated_at?: string
-          year?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "fk_agricultural_data_crop"
-            columns: ["crop_code"]
-            isOneToOne: false
-            referencedRelation: "crop_types"
-            referencedColumns: ["code"]
-          },
-          {
-            foreignKeyName: "fk_agricultural_data_province"
-            columns: ["province_code"]
-            isOneToOne: false
-            referencedRelation: "provinces"
-            referencedColumns: ["code"]
-          },
-        ]
-      }
-      crop_types: {
-        Row: {
-          category: string | null
-          code: string
-          created_at: string
-          id: string
-          name: string
-        }
-        Insert: {
-          category?: string | null
-          code: string
-          created_at?: string
-          id?: string
-          name: string
-        }
-        Update: {
-          category?: string | null
-          code?: string
-          created_at?: string
-          id?: string
-          name?: string
+          user_id?: string
         }
         Relationships: []
       }
-      provinces: {
+      istat_observations: {
         Row: {
-          code: string
           created_at: string
+          data_type_code: string | null
+          data_type_label: string | null
+          freq: string | null
+          freq_label: string | null
           id: string
-          name: string
-          region: string | null
+          obs_status: string | null
+          ref_area_code: string | null
+          ref_area_name: string | null
+          source_upload_id: string | null
+          time_period_year: number | null
+          type_of_crop_code: string | null
+          type_of_crop_label: string | null
+          unit_meas: string | null
+          unit_mult: number | null
+          updated_at: string
+          uploaded_by: string | null
+          value_raw: number | null
         }
         Insert: {
-          code: string
           created_at?: string
+          data_type_code?: string | null
+          data_type_label?: string | null
+          freq?: string | null
+          freq_label?: string | null
           id?: string
-          name: string
-          region?: string | null
+          obs_status?: string | null
+          ref_area_code?: string | null
+          ref_area_name?: string | null
+          source_upload_id?: string | null
+          time_period_year?: number | null
+          type_of_crop_code?: string | null
+          type_of_crop_label?: string | null
+          unit_meas?: string | null
+          unit_mult?: number | null
+          updated_at?: string
+          uploaded_by?: string | null
+          value_raw?: number | null
         }
         Update: {
-          code?: string
           created_at?: string
+          data_type_code?: string | null
+          data_type_label?: string | null
+          freq?: string | null
+          freq_label?: string | null
           id?: string
-          name?: string
-          region?: string | null
+          obs_status?: string | null
+          ref_area_code?: string | null
+          ref_area_name?: string | null
+          source_upload_id?: string | null
+          time_period_year?: number | null
+          type_of_crop_code?: string | null
+          type_of_crop_label?: string | null
+          unit_meas?: string | null
+          unit_mult?: number | null
+          updated_at?: string
+          uploaded_by?: string | null
+          value_raw?: number | null
+        }
+        Relationships: []
+      }
+      istat_productivity: {
+        Row: {
+          area_ha: number | null
+          production_qt: number | null
+          productivity_qt_ha: number | null
+          ref_area_code: string | null
+          ref_area_name: string | null
+          time_period_year: number | null
+          type_of_crop_code: string | null
+          type_of_crop_label: string | null
+        }
+        Insert: {
+          area_ha?: number | null
+          production_qt?: number | null
+          productivity_qt_ha?: number | null
+          ref_area_code?: string | null
+          ref_area_name?: string | null
+          time_period_year?: number | null
+          type_of_crop_code?: string | null
+          type_of_crop_label?: string | null
+        }
+        Update: {
+          area_ha?: number | null
+          production_qt?: number | null
+          productivity_qt_ha?: number | null
+          ref_area_code?: string | null
+          ref_area_name?: string | null
+          time_period_year?: number | null
+          type_of_crop_code?: string | null
+          type_of_crop_label?: string | null
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          email: string | null
+          full_name: string | null
+          id: string
+          is_admin: boolean
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          is_admin?: boolean
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          is_admin?: boolean
+          updated_at?: string
         }
         Relationships: []
       }
