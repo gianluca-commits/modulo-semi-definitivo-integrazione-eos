@@ -587,7 +587,7 @@ const EOSInput: React.FC = () => {
 
                 <div className="pt-4">
                   <Button className="w-full" onClick={handleSubmit} disabled={!polygonData.geojson || !dateValidation.isValid}>
-                    Avvia Analisi EOS
+                    Avvia Analisi
                     <ArrowRight className="w-4 h-4 ml-2" />
                   </Button>
                   
