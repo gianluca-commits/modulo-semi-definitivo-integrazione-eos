@@ -1,5 +1,6 @@
 // Agricultural Productivity Prediction using existing database structure
 import { VegetationPoint, WeatherData } from "./eos";
+import { supabase } from "@/integrations/supabase/client";
 
 export interface HistoricalProductivityData {
   ref_area_code: string;
@@ -15,6 +16,7 @@ export interface HistoricalProductivityData {
 export interface ProductivityPrediction {
   predicted_productivity_qt_ha: number;
   confidence_level: number; // 0-100%
+  data_source: 'istat' | 'demo'; // Track data source
   
   baseline: {
     historical_average: number;
@@ -73,16 +75,60 @@ const MOCK_HISTORICAL_DATA: Record<string, HistoricalProductivityData[]> = {
 export async function getHistoricalProductivity(
   provinceCode: string, 
   cropType: string
-): Promise<HistoricalProductivityData[]> {
+): Promise<{ data: HistoricalProductivityData[], source: 'istat' | 'demo' }> {
   try {
     const istatCropCode = CROP_MAPPING[cropType as keyof typeof CROP_MAPPING] || cropType.toUpperCase();
     
-    // Use mock data for demo - in production this would query istat_productivity table
-    const provinceData = MOCK_HISTORICAL_DATA[provinceCode] || [];
-    return provinceData.filter(d => d.type_of_crop_code === istatCropCode);
+    // Query real ISTAT data from Supabase
+    const { data, error } = await supabase
+      .from('istat_productivity')
+      .select('*')
+      .eq('ref_area_code', provinceCode)
+      .eq('type_of_crop_code', istatCropCode)
+      .order('time_period_year', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching ISTAT productivity data:', error);
+      // Fallback to mock data if Supabase query fails
+      const provinceData = MOCK_HISTORICAL_DATA[provinceCode] || [];
+      return { 
+        data: provinceData.filter(d => d.type_of_crop_code === istatCropCode),
+        source: 'demo'
+      };
+    }
+
+    // If no real data found, use mock data as fallback
+    if (!data || data.length === 0) {
+      console.log('No ISTAT data found, using mock data for', provinceCode, istatCropCode);
+      const provinceData = MOCK_HISTORICAL_DATA[provinceCode] || [];
+      return {
+        data: provinceData.filter(d => d.type_of_crop_code === istatCropCode),
+        source: 'demo'
+      };
+    }
+
+    // Convert Supabase data to our interface format
+    const convertedData = data.map(row => ({
+      ref_area_code: row.ref_area_code || provinceCode,
+      ref_area_name: row.ref_area_name || provinceCode,
+      type_of_crop_code: row.type_of_crop_code || istatCropCode,
+      type_of_crop_label: row.type_of_crop_label || cropType,
+      productivity_qt_ha: Number(row.productivity_qt_ha) || 0,
+      production_qt: Number(row.production_qt) || 0,
+      area_ha: Number(row.area_ha) || 0,
+      time_period_year: row.time_period_year || 0
+    })).filter(d => d.productivity_qt_ha > 0); // Filter out invalid data
+
+    return { data: convertedData, source: 'istat' };
+
   } catch (error) {
     console.error('Error fetching historical productivity:', error);
-    return [];
+    // Fallback to mock data on any error
+    const provinceData = MOCK_HISTORICAL_DATA[provinceCode] || [];
+    return {
+      data: provinceData.filter(d => d.type_of_crop_code === (CROP_MAPPING[cropType as keyof typeof CROP_MAPPING] || cropType.toUpperCase())),
+      source: 'demo'
+    };
   }
 }
 
@@ -316,7 +362,7 @@ export async function generateProductivityPrediction(
   weather: WeatherData | null
 ): Promise<ProductivityPrediction> {
   // Get historical data
-  const historicalData = await getHistoricalProductivity(provinceCode, cropType);
+  const { data: historicalData, source } = await getHistoricalProductivity(provinceCode, cropType);
   const historicalTrend = analyzeHistoricalTrend(historicalData);
   
   // Calculate satellite adjustments
@@ -359,6 +405,7 @@ export async function generateProductivityPrediction(
   return {
     predicted_productivity_qt_ha: Math.round(finalProductivity * 10) / 10,
     confidence_level: confidence,
+    data_source: source,
     
     baseline: {
       historical_average: Math.round(historicalTrend.average * 10) / 10,

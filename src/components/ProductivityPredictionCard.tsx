@@ -120,9 +120,14 @@ export const ProductivityPredictionCard: React.FC<ProductivityPredictionCardProp
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Target className="w-5 h-5" />
-          Previsione Produttività - {province}
+        <CardTitle className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Target className="w-5 h-5" />
+            Previsione Produttività - {province}
+          </div>
+          <Badge variant={prediction.data_source === 'istat' ? 'default' : 'secondary'} className="text-xs">
+            {prediction.data_source === 'istat' ? 'Dati ISTAT' : 'Dati Demo'}
+          </Badge>
         </CardTitle>
         <CardDescription>
           Analisi predittiva per {cropType} basata su dati storici e satellitari
